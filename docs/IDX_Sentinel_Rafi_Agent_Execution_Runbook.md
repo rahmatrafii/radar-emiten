@@ -418,6 +418,9 @@ Status `ok` harus didukung pemeriksaan koneksi DB, bukan hanya menunjukkan prose
 
 # 6. Tahap 2 — Database dan migration SQLx
 
+> ✅ **STATUS: SELESAI (5 Oktober 2026)** — migrasi 3 file sudah jalan di DB `sentinel`; ditambah `src/models/` (Finding strict per kontrak, Snapshot), `src/repositories/` (11 modul: users/theses/snapshots/findings/compliance/alerts/credits/traces/inbound), `lib.rs` sebagai crate library, dan `tests/repository_tests.rs` — 4 test repository PASS terhadap PostgreSQL lokal.
+
+
 ## 6.1 Pola repository
 
 Pisahkan query SQL dari handler HTTP:

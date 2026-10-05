@@ -1,13 +1,8 @@
-mod config;
-mod errors;
-mod routes;
-mod state;
-
+use orchestrator::config::Config;
+use orchestrator::routes;
+use orchestrator::state::AppState;
 use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::EnvFilter;
-
-use crate::config::Config;
-use crate::state::AppState;
 
 #[tokio::main]
 async fn main() {
