@@ -754,6 +754,8 @@ Dengan kredensial milik pemilik akun yang disimpan lokal:
 
 # 9. Tahap 5 — WhatsApp webhook, signature, dan deduplikasi
 
+> ✅ **STATUS: SELESAI (5 Oktober 2026)** — `GET /webhook/whatsapp` (challenge, token salah → 403), `POST /webhook/whatsapp` (raw body → HMAC-SHA256 vs `X-Hub-Signature-256`, constant-time), dedupe `wa_message_id` via constraint unik PostgreSQL (replay → `duplicates`, tanpa side-effect kedua), parser toleran terhadap `statuses` (tanpa message → 200) dan pesan media (`ignored`), pesan text disimpan → `processing` → `processed` + trace. 6 test webhook PASS. Pesan belum memicu command router (di sambung Tahap 6).
+
 ## 9.1 `GET /webhook/whatsapp`
 
 Implementasikan verification Meta dengan query parameter `hub.mode`, `hub.verify_token`, dan `hub.challenge`:
@@ -794,6 +796,8 @@ Untuk uji real, webhook perlu URL publik melalui tunnel yang disetujui tim (cont
 ---
 
 # 10. Tahap 6 — Workflow tesis WhatsApp dan Gemini extractor
+
+> ✅ **STATUS: SELESAI (5 Oktober 2026)** — command router (`/tesis`, `YA`, `TIDAK`, `/status`, `/bukti`, `/diam`, `/lanjut`, `/hapus`, `/bantuan`, `/kredit` admin-only), `GeminiClient` mock (deterministik) + real (butuh `GEMINI_API_KEY`/`GEMINI_MODEL`), parsing JSON ketat (ticker, ≤3 metric registry, arah increase/decrease/any), tesis `PENDING_CONFIRMATION` → `YA` → aktif dengan batas 3 tesis/user, webhook menyambungkan pesan text → router → balasan via `WhatsAppClient`. 6 test tesis PASS. Catatan: prompt extractor tesis belum ada di `PROMPTS.md` milik Dian; schema JSON internal didefinisikan Rafi dan dicatat di `integration-decisions.md`.
 
 ## 10.1 Command router
 

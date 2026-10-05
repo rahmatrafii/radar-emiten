@@ -37,6 +37,24 @@ pub async fn insert(
     Ok(row.0)
 }
 
+/// Finding terbaru yang lolos untuk ticker tesis aktif milik pengguna.
+pub async fn latest_accepted_for_user(
+    pool: &PgPool,
+    pengguna_id: i64,
+) -> sqlx::Result<Option<crate::models::finding::FindingRecord>> {
+    sqlx::query_as(
+        "SELECT f.id, f.ticker, f.subsector, f.metric_name, f.current_value, f.previous_value, \
+         f.period, f.source, f.observed_at, f.confidence_score, f.finding_summary, f.status, \
+         f.rejection_reason, f.dibuat_pada \
+         FROM findings f WHERE f.status='lolos' AND f.ticker IN \
+         (SELECT ticker FROM tesis WHERE pengguna_id=$1 AND aktif=true) \
+         ORDER BY f.dibuat_pada DESC LIMIT 1",
+    )
+    .bind(pengguna_id)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn list(
     pool: &PgPool,
     status: Option<&str>,

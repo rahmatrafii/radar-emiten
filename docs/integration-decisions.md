@@ -42,7 +42,10 @@ Dokumen ini mencatat konflik spesifikasi, komponen yang belum tersedia, dan kepu
 - **Mock vs real:** semua integrasi eksternal default ke mock sampai kredensial/transport terverifikasi.
 - **Metric registry (Tahap 3):** belum final dari tim; default development di kode (`net_profit_margin`, `operating_margin`, `gross_margin`, `roe`, `roa`, `eps`, `revenue`, `net_income`, `der`, `current_ratio`), dapat ditimpa env `METRIC_REGISTRY` (koma-separated). Ganti saat tim memberikan daftar final.
 - **`raw_data` snapshot:** DTO `POST /snapshots` menerima `raw_data` tetapi skema `snapshot_data` belum punya kolom tersebut; saat ini diterima lalu dibuang eksplisit. Migrasi terpisah diperlukan bila evidence mentah ingin disimpan.
-- **Tahap 3 selesai:** route API + internal auth + Finding gate (format → cross-check snapshot → dedupe lolos) + dashboard JSON dengan nomor WA tersamarkan.
+- **Tahap 3 selesai:** route API + internal auth + Finding gate + dashboard JSON dengan nomor WA tersamarkan.
+- **Tahap 6 selesai:** command router + Gemini extractor (mock deterministic) + tesis pending→YA→aktif + batas 3 tesis & 3 metric.
+- **Prompt extractor tesis:** `docs/PROMPTS.md` (milik Dian) mencakup 4 agen (Scout/Analyst/Compliance/Chief Presenter) tetapi belum ada prompt khusus ekstraksi tesis. Schema JSON ekstraksi tesis didefinisikan Rafi (`src/services/gemini_client.rs`), divalidasi ketat di Rust, dan mengikuti gaya structured-output PROMPTS.md. Perlu konfirmasi Dian apakah prompt ini akan di-adopt.
+- **`/diam` durasi:** belum disepakati tim; saat ini mute sampai `/lanjut` (diset 2099-12-31).
 
 ## Keamanan
 

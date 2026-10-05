@@ -11,6 +11,7 @@ pub(crate) mod internal;
 pub(crate) mod snapshots;
 pub(crate) mod traces;
 pub(crate) mod watchlist;
+pub(crate) mod webhook_whatsapp;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -23,6 +24,11 @@ pub fn routes() -> Router<AppState> {
         .route("/jejak", axum::routing::post(traces::post_trace))
         .route("/kredit", axum::routing::post(credits::post_credit))
         .route("/pantauan", axum::routing::get(watchlist::get_watchlist))
+        .route(
+            "/webhook/whatsapp",
+            axum::routing::get(webhook_whatsapp::verify_webhook)
+                .post(webhook_whatsapp::receive_webhook),
+        )
         .route(
             "/internal/snapshots/previous",
             axum::routing::get(internal::internal_previous_snapshot),

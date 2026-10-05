@@ -18,6 +18,74 @@ pub async fn insert_pending(
     Ok(row.0)
 }
 
+pub async fn add_indicator(
+    pool: &PgPool,
+    tesis_id: i64,
+    metric_name: &str,
+    desired_direction: &str,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO indikator_tesis (tesis_id, metric_name, desired_direction) VALUES ($1,$2,$3) \
+         ON CONFLICT (tesis_id, metric_name) DO NOTHING",
+    )
+    .bind(tesis_id)
+    .bind(metric_name)
+    .bind(desired_direction)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Tesis terakhir milik pengguna yang menunggu konfirmasi (id, ticker).
+pub async fn latest_pending(
+    pool: &PgPool,
+    pengguna_id: i64,
+) -> sqlx::Result<Option<(i64, String)>> {
+    let row: Option<(i64, String)> = sqlx::query_as(
+        "SELECT id, ticker FROM tesis WHERE pengguna_id=$1 AND status='PENDING_CONFIRMATION' \
+         ORDER BY id DESC LIMIT 1",
+    )
+    .bind(pengguna_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+/// Batalkan (hapus) tesis pending terakhir pengguna; kembalikan true bila ada yang dihapus.
+pub async fn cancel_pending(pool: &PgPool, pengguna_id: i64) -> sqlx::Result<bool> {
+    let res = sqlx::query(
+        "DELETE FROM tesis WHERE id IN (SELECT id FROM tesis WHERE pengguna_id=$1 \
+         AND status='PENDING_CONFIRMATION' ORDER BY id DESC LIMIT 1)",
+    )
+    .bind(pengguna_id)
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+/// Daftar tesis aktif pengguna: (id, ticker, status).
+pub async fn list_active(
+    pool: &PgPool,
+    pengguna_id: i64,
+) -> sqlx::Result<Vec<(i64, String, String)>> {
+    sqlx::query_as(
+        "SELECT id, ticker, status FROM tesis WHERE pengguna_id=$1 AND aktif=true ORDER BY id",
+    )
+    .bind(pengguna_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Hapus tesis tertentu milik pengguna (workflow /hapus dengan konfirmasi id).
+pub async fn delete_by_id(pool: &PgPool, pengguna_id: i64, tesis_id: i64) -> sqlx::Result<bool> {
+    let res = sqlx::query("DELETE FROM tesis WHERE id=$1 AND pengguna_id=$2")
+        .bind(tesis_id)
+        .bind(pengguna_id)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ThesisRow {
     pub id: i64,
