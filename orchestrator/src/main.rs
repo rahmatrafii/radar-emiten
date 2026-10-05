@@ -1,25 +1,38 @@
-use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
-use serde_json::{json, Value};
-use sqlx::PgPool;
+mod config;
+mod errors;
+mod routes;
+mod state;
+
+use sqlx::postgres::PgPoolOptions;
+use tracing_subscriber::EnvFilter;
+
+use crate::config::Config;
+use crate::state::AppState;
 
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .init();
 
-    let database_url =
-        std::env::var("DATABASE_URL").expect("DATABASE_URL harus diset di environment");
-    let pool = PgPool::connect(&database_url)
+    let config = Config::from_env().unwrap_or_else(|e| {
+        eprintln!("Konfigurasi tidak valid: {e}");
+        std::process::exit(1);
+    });
+
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&config.database_url)
         .await
         .expect("Gagal konek ke PostgreSQL");
 
-    let app = Router::new()
-        .route("/health", get(health))
-        .with_state(pool);
+    let state = AppState::new(pool, config.clone());
+    let app = routes::routes().with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
-        .await
-        .unwrap();
-    println!("Server jalan di http://localhost:8080");
+    let addr = format!("{}:{}", config.host, config.port);
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    tracing::info!("Server jalan di http://{} (mode {:?})", addr, config.app_mode);
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
@@ -27,17 +40,7 @@ async fn main() {
         .unwrap();
 }
 
-async fn health(State(pool): State<PgPool>) -> (StatusCode, Json<Value>) {
-    match sqlx::query("SELECT 1").execute(&pool).await {
-        Ok(_) => (StatusCode::OK, Json(json!({"status": "ok", "database": "ok"}))),
-        Err(_) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"status": "error", "database": "unavailable"})),
-        ),
-    }
-}
-
 async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
-    println!("Menerima sinyal shutdown, menutup server...");
+    tracing::info!("Menerima sinyal shutdown, menutup server...");
 }

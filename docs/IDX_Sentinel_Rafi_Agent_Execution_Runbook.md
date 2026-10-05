@@ -217,6 +217,9 @@ Perintah `git status` dan daftar file harus diperiksa sebelum file diubah. Sesua
 
 # 5. Tahap 1 — Fondasi Rust, Axum, konfigurasi, dan keamanan
 
+> ✅ **STATUS: SELESAI (5 Oktober 2026)** — struktur `config.rs`/`state.rs`/`errors.rs`/`routes/`, `Config::from_env()` + validasi mode real, AppState dengan PgPool, tracing, `GET /health` JSON + cek DB terverifikasi (`{"status":"ok","database":"ok"}`), graceful shutdown, port 8080, `cargo check` PASS.
+
+
 ## 5.1 Struktur kode yang disarankan
 
 Sesuaikan dengan konvensi repository saat ini. Jangan memindahkan kode besar jika tidak diperlukan.
