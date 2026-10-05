@@ -2,6 +2,14 @@
 
 Dokumen ini mencatat konflik spesifikasi, komponen yang belum tersedia, dan keputusan yang perlu dikonfirmasi tim. Pisahkan **fakta terkonfirmasi** dari hal yang **belum dipastikan**.
 
+## Hasil Audit Tahap 0 (5 Oktober 2026)
+
+- Branch `main`, working tree bersih sebelum audit.
+- Baseline `cargo check`: **PASS** (exit 0).
+- Komponen sudah ada: crate `orchestrator` (Axum minimal, `/health` + graceful shutdown, port 8080), 3 migrasi (skema awal, kontrak Finding, penyelarasan runbook — sudah diterapkan ke DB `sentinel`), `docker-compose.yml` + healthcheck, `.env` (lokal, tidak ter-commit), `.env.example`, README, 4 dokumen `docs/`.
+- Komponen belum ada: MCP server/client (Representative), endpoint internal `/snapshots` `/findings` `/jejak` `/kredit` `/pantauan`, WhatsApp client & webhook, `AgentPipeline`, Gemini client, tes otomatis (`tests/`), fixture.
+- Risiko: Gemini API key pernah terekspos — rotasi direkomendasikan.
+
 ## Konflik yang belum terselesaikan
 
 ### 1. Disclaimer & kata terlarang — BLOCKER KEPATUHAN SEBELUM DEMO PUBLIK
