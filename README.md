@@ -58,16 +58,14 @@ Jalankan instance database lokal menggunakan Docker:
 docker compose up -d
 ```
 
-### 3. Jalankan MCP Rust Server
+### 3. Jalankan Backend (orchestrator)
 ```bash
-cargo run --bin mcp-server
+cd orchestrator
+cargo run
 ```
+Backend Axum berjalan di port `8080`. Health check: `curl http://localhost:8080/health`.
 
-### 4. Jalankan Axum Backend
-Di terminal terpisah:
-```bash
-cargo run --bin backend
-```
+> Catatan: MCP server (`mcp-server`) disediakan oleh Representative dan belum ada di repo ini.
 
 ---
 
