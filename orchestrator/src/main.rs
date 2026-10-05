@@ -27,7 +27,11 @@ async fn main() {
 
     let addr = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    tracing::info!("Server jalan di http://{} (mode {:?})", addr, config.app_mode);
+    tracing::info!(
+        "Server jalan di http://{} (mode {:?})",
+        addr,
+        config.app_mode
+    );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

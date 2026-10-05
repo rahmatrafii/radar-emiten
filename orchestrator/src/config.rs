@@ -41,8 +41,8 @@ impl Config {
             _ => AppMode::Mock,
         };
 
-        let database_url = env::var("DATABASE_URL")
-            .map_err(|_| ConfigError::Missing("DATABASE_URL"))?;
+        let database_url =
+            env::var("DATABASE_URL").map_err(|_| ConfigError::Missing("DATABASE_URL"))?;
 
         let port = env::var("PORT")
             .ok()

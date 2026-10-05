@@ -37,6 +37,25 @@ pub async fn insert(
     Ok(row.0)
 }
 
+pub async fn list(
+    pool: &PgPool,
+    status: Option<&str>,
+    limit: i64,
+    offset: i64,
+) -> sqlx::Result<Vec<crate::models::finding::FindingRecord>> {
+    sqlx::query_as(
+        "SELECT id, ticker, subsector, metric_name, current_value, previous_value, period, \
+         source, observed_at, confidence_score, finding_summary, status, rejection_reason, dibuat_pada \
+         FROM findings WHERE ($1::TEXT IS NULL OR status = $1) \
+         ORDER BY dibuat_pada DESC LIMIT $2 OFFSET $3",
+    )
+    .bind(status)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn set_status(
     pool: &PgPool,
     finding_id: i64,

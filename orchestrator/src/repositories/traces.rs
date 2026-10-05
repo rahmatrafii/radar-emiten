@@ -21,3 +21,26 @@ pub async fn trace(
     .await?;
     Ok(row.0)
 }
+
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct TraceRecord {
+    pub id: i64,
+    pub agent: String,
+    pub aksi: String,
+    pub outcome: Option<String>,
+    pub ticker: Option<String>,
+    pub details: Option<serde_json::Value>,
+    pub dicatat_pada: chrono::DateTime<chrono::Utc>,
+}
+
+/// Jejak agent terbaru untuk /api/jejak.
+pub async fn list_recent(pool: &PgPool, limit: i64, offset: i64) -> sqlx::Result<Vec<TraceRecord>> {
+    sqlx::query_as(
+        "SELECT id, agent, aksi, outcome, ticker, details, dicatat_pada \
+         FROM jejak_agent ORDER BY dicatat_pada DESC, id DESC LIMIT $1 OFFSET $2",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+}

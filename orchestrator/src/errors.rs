@@ -1,4 +1,4 @@
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, http::StatusCode, response::IntoResponse};
 use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
@@ -9,6 +9,10 @@ pub enum AppError {
     BadRequest(String),
     #[error("not found")]
     NotFound,
+    #[error("unauthorized")]
+    Unauthorized,
+    #[error("external service error: {0}")]
+    External(String),
 }
 
 impl IntoResponse for AppError {
@@ -17,6 +21,8 @@ impl IntoResponse for AppError {
             AppError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "database error"),
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m.as_str()),
             AppError::NotFound => (StatusCode::NOT_FOUND, "not found"),
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
+            AppError::External(m) => (StatusCode::BAD_GATEWAY, m.as_str()),
         };
         // Tidak pernah membocorkan detail internal/stack trace ke client.
         (status, Json(json!({ "error": message }))).into_response()

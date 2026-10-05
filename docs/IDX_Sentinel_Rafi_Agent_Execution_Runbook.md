@@ -593,6 +593,8 @@ Tambahkan tabel `conversation_state` hanya jika dibutuhkan untuk state dialog se
 
 # 7. Tahap 3 — API internal dan API dashboard
 
+> ✅ **STATUS: SELESAI (5 Oktober 2026)** — endpoint `/snapshots` (POST/GET), `/findings`, `/jejak`, `/kredit`, `/pantauan`, `/internal/snapshots/previous`, `/internal/findings`, dan `/api/tesis` `/api/findings` `/api/ditolak` `/api/jejak` `/api/kredit`; endpoint internal dijaga `INTERNAL_API_TOKEN` (constant-time compare); Finding divalidasi deterministik + cross-check snapshot + audit; masking nomor WA; 5 test API + 9 unit test PASS.
+
 Semua endpoint untuk pertukaran data tim harus melalui Axum; anggota lain tidak boleh mengakses PostgreSQL langsung. Lindungi endpoint internal dengan `Authorization: Bearer <INTERNAL_API_TOKEN>` jika bisa dijangkau jaringan. Jangan memakai token literal di source code.
 
 ## 7.1 Endpoint status
@@ -694,6 +696,8 @@ Bentuk respons konsisten, terdokumentasi, dan diujikan. Dashboard dikerjakan ole
 ---
 
 # 8. Tahap 4 — WhatsApp Cloud API client
+
+> ✅ **STATUS: SELESAI (5 Oktober 2026)** — `services/whatsapp_client.rs` (`send_text`/`send_template`/`send_alert`), DTO `WhatsAppAlertPayload` sesuai CONTRACTS.md, mock transport (`mock_sent`, catatan request), real mode POST ke Graph API dengan cek status HTTP + message_id, hard gate `DISCLAIMER_POLICY_CONFLICT` (mock melaporkan `blocked_by_policy_conflict`), token tidak masuk log. 5 test WhatsApp PASS.
 
 Buat service terpisah, misalnya `services/whatsapp_client.rs`. Jangan memasukkan HTTP request Meta langsung ke setiap handler.
 

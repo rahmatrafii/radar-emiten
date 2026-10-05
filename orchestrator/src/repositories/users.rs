@@ -1,9 +1,6 @@
 use sqlx::PgPool;
 
-pub async fn upsert_by_wa(
-    pool: &PgPool,
-    nomor_wa: &str,
-) -> sqlx::Result<i64> {
+pub async fn upsert_by_wa(pool: &PgPool, nomor_wa: &str) -> sqlx::Result<i64> {
     let row: (i64,) = sqlx::query_as(
         "INSERT INTO pengguna (nomor_wa) VALUES ($1) \
          ON CONFLICT (nomor_wa) DO UPDATE SET nomor_wa = EXCLUDED.nomor_wa \

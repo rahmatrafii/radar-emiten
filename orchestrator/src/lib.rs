@@ -1,6 +1,11 @@
+pub mod auth;
 pub mod config;
 pub mod errors;
+pub mod masking;
+pub mod metrics;
 pub mod models;
 pub mod repositories;
 pub mod routes;
+pub mod services;
 pub mod state;
+pub mod validation;

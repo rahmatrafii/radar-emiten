@@ -21,11 +21,7 @@ pub async fn insert_if_new(
     Ok(res.rows_affected() > 0)
 }
 
-pub async fn set_status(
-    pool: &PgPool,
-    id_pesan_wa: &str,
-    status: &str,
-) -> sqlx::Result<()> {
+pub async fn set_status(pool: &PgPool, id_pesan_wa: &str, status: &str) -> sqlx::Result<()> {
     sqlx::query(
         "UPDATE pesan_masuk SET processing_status=$2, \
          attempt_count = attempt_count + 1, \

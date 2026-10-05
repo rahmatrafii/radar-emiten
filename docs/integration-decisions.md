@@ -7,7 +7,8 @@ Dokumen ini mencatat konflik spesifikasi, komponen yang belum tersedia, dan kepu
 - Branch `main`, working tree bersih sebelum audit.
 - Baseline `cargo check`: **PASS** (exit 0).
 - Komponen sudah ada: crate `orchestrator` (Axum minimal, `/health` + graceful shutdown, port 8080), 3 migrasi (skema awal, kontrak Finding, penyelarasan runbook — sudah diterapkan ke DB `sentinel`), `docker-compose.yml` + healthcheck, `.env` (lokal, tidak ter-commit), `.env.example`, README, 4 dokumen `docs/`.
-- Komponen belum ada: MCP server/client (Representative), endpoint internal `/snapshots` `/findings` `/jejak` `/kredit` `/pantauan`, WhatsApp client & webhook, `AgentPipeline`, Gemini client, tes otomatis (`tests/`), fixture.
+- Komponen belum ada: MCP server/client (Representative), WhatsApp client & webhook, `AgentPipeline`, Gemini client, fixture E2E skenario A–E.
+- Endpoint internal/dashboard (`/snapshots`, `/findings`, `/jejak`, `/kredit`, `/pantauan`, `/internal/*`, `/api/*`) **sudah ada** (Tahap 3, 5 Oktober 2026).
 - Risiko: Gemini API key pernah terekspos — rotasi direkomendasikan.
 
 ## Konflik yang belum terselesaikan
@@ -39,6 +40,9 @@ Dokumen ini mencatat konflik spesifikasi, komponen yang belum tersedia, dan kepu
 - **Status tesis:** `PENDING_CONFIRMATION`, `MENGUAT`, `NETRAL`, `MELEMAH`, `BELUM_CUKUP_DATA`.
 - **Dedupe alert:** `(pengguna_id, tesis_id, metric_name, period)` + dedupe pesan masuk via `wa_message_id`.
 - **Mock vs real:** semua integrasi eksternal default ke mock sampai kredensial/transport terverifikasi.
+- **Metric registry (Tahap 3):** belum final dari tim; default development di kode (`net_profit_margin`, `operating_margin`, `gross_margin`, `roe`, `roa`, `eps`, `revenue`, `net_income`, `der`, `current_ratio`), dapat ditimpa env `METRIC_REGISTRY` (koma-separated). Ganti saat tim memberikan daftar final.
+- **`raw_data` snapshot:** DTO `POST /snapshots` menerima `raw_data` tetapi skema `snapshot_data` belum punya kolom tersebut; saat ini diterima lalu dibuang eksplisit. Migrasi terpisah diperlukan bila evidence mentah ingin disimpan.
+- **Tahap 3 selesai:** route API + internal auth + Finding gate (format → cross-check snapshot → dedupe lolos) + dashboard JSON dengan nomor WA tersamarkan.
 
 ## Keamanan
 

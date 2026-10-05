@@ -15,3 +15,22 @@ pub struct Finding {
     pub confidence_score: f64,
     pub finding_summary: String,
 }
+
+/// Baris findings untuk kebutuhan list/dashboard (kolom internal tidak jadi payload Finding).
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct FindingRecord {
+    pub id: i64,
+    pub ticker: Option<String>,
+    pub subsector: Option<String>,
+    pub metric_name: Option<String>,
+    pub current_value: Option<f64>,
+    pub previous_value: Option<f64>,
+    pub period: Option<String>,
+    pub source: Option<String>,
+    pub observed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub confidence_score: Option<f64>,
+    pub finding_summary: Option<String>,
+    pub status: String,
+    pub rejection_reason: Option<String>,
+    pub dibuat_pada: chrono::DateTime<chrono::Utc>,
+}
