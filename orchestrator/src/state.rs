@@ -10,6 +10,7 @@ pub struct AppState {
     pub http: reqwest::Client,
     pub whatsapp: WhatsAppClient,
     pub gemini: crate::services::gemini_client::GeminiClient,
+    pub mcp: std::sync::Arc<dyn crate::integrations::mcp_gateway::McpGateway>,
 }
 
 impl AppState {
@@ -20,12 +21,14 @@ impl AppState {
             .unwrap_or_else(|_| reqwest::Client::new());
         let whatsapp = WhatsAppClient::new(&config);
         let gemini = crate::services::gemini_client::GeminiClient::new(&config);
+        let mcp = crate::integrations::mcp_gateway::from_config(&config);
         Self {
             pool,
             config,
             http,
             whatsapp,
             gemini,
+            mcp,
         }
     }
 }

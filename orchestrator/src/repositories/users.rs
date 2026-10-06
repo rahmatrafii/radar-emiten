@@ -21,6 +21,16 @@ pub async fn set_opt_in(pool: &PgPool, user_id: i64, opt_in: bool) -> sqlx::Resu
     Ok(())
 }
 
+pub async fn is_muted(pool: &PgPool, user_id: i64) -> sqlx::Result<bool> {
+    let row: (bool,) = sqlx::query_as(
+        "SELECT jeda_sampai IS NOT NULL AND jeda_sampai > NOW() FROM pengguna WHERE id=$1",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
 pub async fn set_muted_until(
     pool: &PgPool,
     user_id: i64,

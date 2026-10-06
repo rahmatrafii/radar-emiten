@@ -1,9 +1,11 @@
 pub mod auth;
 pub mod config;
 pub mod errors;
+pub mod integrations;
 pub mod masking;
 pub mod metrics;
 pub mod models;
+pub mod orchestrator;
 pub mod repositories;
 pub mod routes;
 pub mod services;

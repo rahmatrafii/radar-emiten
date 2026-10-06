@@ -175,3 +175,64 @@ pub async fn update_status(pool: &PgPool, tesis_id: i64, status: &str) -> sqlx::
         .await?;
     Ok(())
 }
+
+/// Satu baris watchlist penuh: tesis + metric + pengguna (untuk pipeline).
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct WatchWithUser {
+    pub tesis_id: i64,
+    pub pengguna_id: i64,
+    pub ticker: String,
+    pub metric_name: String,
+    pub desired_direction: String,
+    pub nomor_wa: String,
+    pub jeda_sampai: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+pub async fn watchlist_with_user(pool: &PgPool) -> sqlx::Result<Vec<WatchWithUser>> {
+    sqlx::query_as(
+        "SELECT t.id AS tesis_id, t.pengguna_id, t.ticker, i.metric_name, i.desired_direction, \
+         p.nomor_wa, p.jeda_sampai \
+         FROM tesis t \
+         JOIN indikator_tesis i ON i.tesis_id = t.id \
+         JOIN pengguna p ON p.id = t.pengguna_id \
+         WHERE t.aktif = true ORDER BY t.ticker, i.metric_name",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Hubungkan Finding yang lolos dengan tesis; duplikat diabaikan.
+pub async fn link_finding(
+    pool: &PgPool,
+    finding_id: i64,
+    tesis_id: i64,
+    arah_dukungan: &str,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO finding_tesis (finding_id, tesis_id, arah_dukungan) VALUES ($1,$2,$3) \
+         ON CONFLICT (finding_id, tesis_id) DO NOTHING",
+    )
+    .bind(finding_id)
+    .bind(tesis_id)
+    .bind(arah_dukungan)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Hitungan bukti valid (Finding lolos) yang mendukung vs melemahkan per tesis.
+/// Tie atau tidak ada bukti: hitungan hanya (0,0) berarti belum cukup data.
+pub async fn support_counts(pool: &PgPool, tesis_id: i64) -> sqlx::Result<(i64, i64)> {
+    let row: (i64, i64) = sqlx::query_as(
+        "SELECT \
+           COUNT(*) FILTER (WHERE ft.arah_dukungan = 'mendukung'), \
+           COUNT(*) FILTER (WHERE ft.arah_dukungan = 'melemahkan') \
+         FROM finding_tesis ft \
+         JOIN findings f ON f.id = ft.finding_id \
+         WHERE ft.tesis_id = $1 AND f.status = 'lolos'",
+    )
+    .bind(tesis_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row)
+}

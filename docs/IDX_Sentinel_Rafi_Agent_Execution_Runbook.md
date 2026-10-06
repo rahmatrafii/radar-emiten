@@ -853,6 +853,8 @@ Simpan nomor dalam satu format kanonis yang cocok dengan WhatsApp Cloud API. Sem
 
 # 11. Tahap 7 — MCP gateway dan sumber data
 
+> ✅ **STATUS: SELESAI (5 Oktober 2026)** — trait `McpGateway` (6 tools), `MockMcpGateway` (fixture + error 410/transport), `RealMcpGateway` stub jujur, `from_config`, `AppState.mcp`, 7 test PASS. Adapter real tetap blocked sampai transport MCP Representative disepakati.
+
 MCP server/Rust `rmcp` dibuat oleh Representative. Rafi membuat **MCP client/gateway adapter** untuk dipanggil oleh `AgentPipeline`.
 
 ## 11.1 Enam MCP tools yang harus dikenali oleh adapter
@@ -902,6 +904,8 @@ Pipeline membutuhkan dua observasi yang benar-benar dapat dibandingkan. Bila sna
 ---
 
 # 12. Tahap 8 — `orchestrator::AgentPipeline`
+
+> ✅ **STATUS: SELESAI (5 Oktober 2026)** — `AgentPipeline::run_cycle()` + `PipelineRunReport`, delta deterministik, reuse `accept_finding`, link finding_tesis, status tesis, dedupe/cooldown/mute/alert harian WIB, WhatsApp mock_sent, jejak agent. 5+3 test PASS.
 
 Ini deliverable utama M-03. Bentuk pipeline sebagai service yang komponennya mudah dites dan bukan satu fungsi besar di handler.
 
