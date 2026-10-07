@@ -1,0 +1,49 @@
+[workspace]
+members = [
+    ".",          # radar-emiten (Sectors API v2 client)
+    "orchestrator", # HTTP server / MCP bridge
+]
+resolver = "2"
+
+[package]
+name = "radar-emiten"
+version = "0.1.0"
+edition = "2021"
+description = "IDX Sentinel — Sectors API v2 Client (Data & MCP Layer)"
+authors = ["Data & MCP Lead"]
+
+[[bin]]
+name = "radar-emiten"
+path = "src/main.rs"
+
+[lib]
+name = "radar_emiten"
+path = "src/lib.rs"
+
+[dependencies]
+# HTTP client — gunakan fitur rustls agar tidak perlu OpenSSL system library
+reqwest  = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Serialisasi / deserialisasi JSON
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Structured logging
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling ergonomis
+thiserror = "1"
+anyhow    = "1"
+
+# Waktu (TTL cache)
+chrono = { version = "0.4", features = ["serde"] }
+
+# Environment variable helper
+dotenvy = "0.15"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
