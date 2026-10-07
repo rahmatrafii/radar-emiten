@@ -5,6 +5,7 @@ pub mod client;
 pub mod credits;
 pub mod error;
 pub mod models;
+pub mod seed;
 
 #[cfg(test)]
 mod tests;
