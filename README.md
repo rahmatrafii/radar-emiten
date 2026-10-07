@@ -1,4 +1,4 @@
-# Financial Market Research Agent 🚀
+﻿# Financial Market Research Agent 🚀
 
 > [!CAUTION]
 > **PENTING / DISCLAIMER:**
@@ -27,9 +27,9 @@ Sectors API v2 ──► MCP Rust Server ──► Axum Backend + Gemini Flash �
 
 | Nama | Peran | Tanggung Jawab Utama |
 |---|---|---|
-| **Representative** | Data & MCP Rust Engineer | Integrasi Sectors API v2, MCP Rust Server (`rmcp`), Caching & Rate-limit Handling |
+| **Rafiq** | Data & MCP Rust Engineer | Integrasi Sectors API v2, MCP Rust Server (`rmcp`), Caching & Rate-limit Handling |
 | **Dian** | Agent Logic & Prompt Engineer | Desain Master Prompts (JSON Structured Output), Compliance & Rule Guardrails, Few-Shot Test Cases |
-| **Rahmat** | Backend & Platform Engineer | Axum Backend Engine, PostgreSQL Schema & Repository, WhatsApp Cloud API Webhook & Alerting |
+| **Rafi** | Backend & Platform Engineer | Axum Backend Engine, PostgreSQL Schema & Repository, WhatsApp Cloud API Webhook & Alerting |
 
 ---
 
@@ -72,13 +72,25 @@ cd orchestrator
 cargo run
 ```
 Backend Axum berjalan di port `8080`. Health check: `curl http://localhost:8080/health`.
+Dashboard: `http://localhost:8080/dashboard`.
+
+> Migrasi TIDAK auto-run. Jalankan manual dulu:
+> ```bash
+> sqlx migrate run --source orchestrator/migrations
+> ```
+> Mode default `APP_MODE=mock` (aman untuk dev). Scheduler default nonaktif (`SCHEDULER_ENABLED=false`).
 
 ---
 
 ## 📚 Dokumentasi Lengkap
 
-Untuk panduan arsitektur dan spesifikasi teknis mendalam, silakan baca dokumen pada direktori `docs/`:
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): Diagram alur data, spesifikasi tool MCP, dan penanganan Sectors API v2.
-- [docs/CONTRACTS.md](docs/CONTRACTS.md): Kontrak schema JSON resmi untuk pertukaran data antarkomponen (`Finding`).
-- [docs/PROMPTS.md](docs/PROMPTS.md): Master Prompt untuk ke-4 agent (Scout, Fundamental, Compliance, Presenter).
-- [docs/TASKS.md](docs/TASKS.md): Rincian pembagian kerja dan milestone tim hackathon.
+Mulai dari [docs/README.md](docs/README.md) (indeks + status handover), lalu berurutan:
+
+- [docs/01-mulai-dari-nol.md](docs/01-mulai-dari-nol.md): setup `.env`, database, cara jalan, troubleshooting, sisa kerja terbuka.
+- [docs/02-arsitektur.md](docs/02-arsitektur.md): diagram alur data, 6 MCP tools, alur tesis → alert.
+- [docs/03-kontrak-data.md](docs/03-kontrak-data.md): schema `Finding`, hasil compliance, payload WhatsApp.
+- [docs/04-agent-prompts.md](docs/04-agent-prompts.md): 4 system prompt + daftar kata terlarang.
+- [docs/05-api-backend.md](docs/05-api-backend.md): semua endpoint Axum + contoh `curl` + 3 gate validasi.
+- [docs/06-sectors-api.md](docs/06-sectors-api.md): endpoint Sectors v2 terverifikasi + biaya kredit.
+- [docs/07-indikator-testing.md](docs/07-indikator-testing.md): whitelist metric + cara `cargo test`.
+- [docs/archive/](docs/archive/): histori masa hackathon (audit, runbook, brief, pembagian tugas) — bukan acuan teknis.

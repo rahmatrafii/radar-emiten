@@ -4,17 +4,26 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tracing::info;
 
-/// Biaya kredit estimasi per jenis panggilan API.
-/// Angka ini bisa disesuaikan sesuai dokumentasi Sectors API.
+/// Biaya kredit per jenis panggilan API (terverifikasi dari dokumentasi resmi).
+/// Referensi: https://docs.sectors.app (billing: 2xx menagih biaya endpoint,
+///
+/// 400/401/403/429/5xx gratis; 404 ikut menagih 1 kredit).
 pub mod cost {
-    /// Biaya memanggil endpoint quarterly reports (per request).
-    pub const QUARTERLY_REPORTS: u64 = 5;
+    /// `GET /v2/subsectors/` — 1 kredit.
+    pub const SUBSECTORS: u64 = 1;
 
-    /// Biaya memanggil screener per ticker (estimasi).
-    pub const SCREENER_PER_TICKER: u64 = 2;
+    /// `GET /v2/companies/` structured (`where`) — 1 kredit.
+    /// (Natural language `q` = 3 kredit — tidak dipakai client ini.)
+    pub const SCREENER_STRUCTURED: u64 = 1;
 
-    /// Biaya panggilan screener umum (tanpa filter ticker spesifik).
-    pub const SCREENER_GENERAL: u64 = 3;
+    /// `GET /v2/companies/quarterly-financial-dates/` — 1 kredit per halaman.
+    pub const QUARTERLY_DATES_PAGE: u64 = 1;
+
+    /// `GET /v2/subsector/report/{sub}/` — 1 kredit per section.
+    pub const SUBSECTOR_REPORT_PER_SECTION: u64 = 1;
+
+    /// `GET /v2/financials/quarterly/{symbol}/` — 1 kredit per quarter.
+    pub const FINANCIALS_PER_QUARTER: u64 = 1;
 }
 
 /// Melacak estimasi penggunaan kredit API secara thread-safe.
@@ -25,7 +34,7 @@ pub mod cost {
 /// ```rust
 /// use radar_emiten::sectors::credits::{cost, CreditTracker};
 /// let tracker = CreditTracker::new(1000);
-/// tracker.charge(cost::QUARTERLY_REPORTS);
+/// tracker.charge(cost::SCREENER_STRUCTURED);
 /// println!("Kredit digunakan: {}", tracker.used());
 /// ```
 #[derive(Debug)]

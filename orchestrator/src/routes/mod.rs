@@ -42,4 +42,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/ditolak", axum::routing::get(dashboard::api_rejected))
         .route("/api/jejak", axum::routing::get(dashboard::api_traces))
         .route("/api/kredit", axum::routing::get(dashboard::api_credits))
+        .nest_service(
+            "/dashboard",
+            tower_http::services::ServeDir::new("../dashboard"),
+        )
 }

@@ -1,47 +1,92 @@
 // src/sectors/models/quarterly.rs
-// Model respons untuk endpoint /v2/companies/reports/quarterly
+// Model respons untuk endpoint kuartalan Sectors API v2.
+//
+// Referensi:
+// - Universe dates: https://docs.sectors.app/api-references/v2/indonesia/helper-list/latest-quarterly-dates
+//   `GET /v2/companies/quarterly-financial-dates/?since=YYYY-MM-DD&limit=N`
+//   → `{"results": [{"symbol", "date", "quarter"}], "pagination": {...}}`
+//   Biaya: 1 kredit per halaman.
+// - Per-symbol financials: https://docs.sectors.app/api-references/v2/indonesia/report/quarterly-financials
+//   `GET /v2/financials/quarterly/{symbol}/?n_quarters=N`
+//   → JSON array langsung `[{symbol, date, <metric...>, financials_sector_metrics?}]`
+//   Biaya: 1 kredit per quarter yang dikembalikan.
+//   Simbol menerima `BBCA` maupun `BBCA.JK` (case-insensitive); respons memakai `.JK`.
+// (Terverifikasi live 7 Okt 2026.)
 
-use serde::{Deserialize, Serialize};
-
-/// Satu entri laporan kuartalan dari endpoint
-/// `GET /v2/companies/reports/quarterly?since=YYYY-MM-DD`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QuarterlyReport {
-    /// Kode saham BEI, contoh: `"BBCA"`.
+/// Satu baris feed tanggal laporan kuartalan universe.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct QuarterlyDateRow {
+    /// Kode saham, contoh: `"BBCA.JK"`.
     pub symbol: String,
 
-    /// Nama perusahaan.
-    pub company_name: Option<String>,
+    /// Tanggal laporan kuartalan, format `"YYYY-MM-DD"`.
+    pub date: String,
 
-    /// Periode pelaporan, contoh: `"2024-Q3"`.
-    pub period: String,
+    /// Label kuartal: `"q1"`..`"q4"`.
+    pub quarter: String,
+}
 
-    /// Tanggal pelaporan ke bursa (format ISO 8601).
-    pub report_date: Option<String>,
+/// Respons feed tanggal kuartalan universe.
+#[derive(Debug, serde::Deserialize)]
+pub struct QuarterlyDatesResponse {
+    #[serde(default)]
+    pub results: Vec<QuarterlyDateRow>,
 
-    /// Pendapatan bersih (dalam jutaan rupiah).
-    pub net_income: Option<f64>,
+    #[serde(default)]
+    pub pagination: Option<serde_json::Value>,
+}
 
-    /// Pendapatan usaha.
-    pub revenue: Option<f64>,
+/// Satu record keuangan kuartalan untuk satu emiten.
+///
+/// Field metrik bervariasi per sektor (bank/asuransi punya tambahan di
+/// `financials_sector_metrics` seperti `net_interest_income`, `gross_loan`,
+/// `total_deposit`). Semua metrik diakses via [`QuarterlyFinancials::metric`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct QuarterlyFinancials {
+    /// Kode saham, contoh: `"BBCA.JK"`.
+    #[serde(default)]
+    pub symbol: String,
 
-    /// Earnings per share.
-    pub eps: Option<f64>,
+    /// Tanggal laporan kuartalan, format `"YYYY-MM-DD"`.
+    #[serde(default)]
+    pub date: Option<String>,
 
-    /// Field tambahan yang mungkin ada di respons API, disimpan agar tidak hilang.
+    /// Semua metrik keuangan (flat + objek `financials_sector_metrics`).
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
-/// Respons penuh dari endpoint quarterly reports.
-/// Sectors API v2 membungkus data dalam field `"data"`.
-#[derive(Debug, Deserialize)]
-pub struct QuarterlyReportResponse {
-    pub data: Vec<QuarterlyReport>,
+impl QuarterlyFinancials {
+    /// Mengambil nilai metrik sebagai `f64`.
+    ///
+    /// Mencari di field flat terlebih dahulu, lalu di dalam objek
+    /// `financials_sector_metrics` (untuk emiten sektor finansial).
+    /// Mengembalikan `None` jika tidak ada atau bukan angka finite.
+    pub fn metric(&self, name: &str) -> Option<f64> {
+        if let Some(v) = to_f64_opt(self.extra.get(name)) {
+            return Some(v);
+        }
+        if let Some(nested) = self.extra.get("financials_sector_metrics") {
+            if let Some(obj) = nested.as_object() {
+                if let Some(v) = to_f64_opt(obj.get(name)) {
+                    return Some(v);
+                }
+            }
+        }
+        None
+    }
 
-    #[serde(default)]
-    pub total: Option<u64>,
+    /// Ticker 4 huruf untuk kontrak internal (orchestrator validasi `^[A-Z]{4}$`).
+    /// `"BBCA.JK"` → `"BBCA"`.
+    pub fn ticker_short(&self) -> String {
+        crate::sectors::client::normalize_ticker(&self.symbol)
+    }
+}
 
-    #[serde(default)]
-    pub page: Option<u32>,
+fn to_f64_opt(v: Option<&serde_json::Value>) -> Option<f64> {
+    match v? {
+        serde_json::Value::Number(n) => n.as_f64().filter(|x| x.is_finite()),
+        serde_json::Value::String(s) => s.trim().parse::<f64>().ok().filter(|x| x.is_finite()),
+        _ => None,
+    }
 }

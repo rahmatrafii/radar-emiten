@@ -8,6 +8,7 @@ pub mod models;
 pub mod orchestrator;
 pub mod repositories;
 pub mod routes;
+pub mod scheduler;
 pub mod services;
 pub mod state;
 pub mod validation;

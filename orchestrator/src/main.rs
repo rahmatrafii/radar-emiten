@@ -23,7 +23,29 @@ async fn main() {
         .expect("Gagal konek ke PostgreSQL");
 
     let state = AppState::new(pool, config.clone());
-    let app = routes::routes().with_state(state);
+    let app = routes::routes().with_state(state.clone());
+
+    // Scheduler F2: hanya aktif bila SCHEDULER_ENABLED=true (default: nonaktif
+    // agar tidak mengganggu development/testing). Interval dibaca dari
+    // config.scheduler_interval_seconds.
+    let scheduler_enabled = std::env::var("SCHEDULER_ENABLED")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    if scheduler_enabled {
+        tracing::info!(
+            "Scheduler F2 aktif (interval {} detik)",
+            config.scheduler_interval_seconds
+        );
+        let scheduler_state = state.clone();
+        tokio::spawn(async move {
+            orchestrator::scheduler::run_scheduler(scheduler_state, shutdown_rx).await;
+        });
+    } else {
+        tracing::info!("Scheduler F2 nonaktif (SCHEDULER_ENABLED!=true)");
+        // Hindari warning unused: tutup receiver yang tidak dipakai.
+        drop(shutdown_rx);
+    }
 
     let addr = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
@@ -34,7 +56,11 @@ async fn main() {
     );
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            // Teruskan sinyal shutdown ke scheduler (abaikan bila scheduler nonaktif).
+            let _ = shutdown_tx.send(());
+        })
         .await
         .unwrap();
 }

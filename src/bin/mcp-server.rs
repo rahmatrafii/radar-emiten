@@ -3,6 +3,12 @@
 //! Mengekspos 6 core tools via MCP (transport stdio) yang membungkus
 //! `SectorsClient` (Sectors API v2 + cache + credit tracker).
 //!
+//! Endpoint mengikuti dokumentasi resmi (terverifikasi live 7 Okt 2026):
+//! - `GET /v2/subsectors/` (1 kredit)
+//! - `GET /v2/companies/` + `where` (1 kredit)
+//! - `GET /v2/subsector/report/{sub}/` + `sections` (1 kredit/section)
+//! - `GET /v2/financials/quarterly/{symbol}/` (1 kredit/quarter)
+//!
 //! Jalankan:
 //! ```sh
 //! SECTORS_API_KEY=... cargo run --bin mcp-server
@@ -24,29 +30,32 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct ScreenParams {
-    /// Filter subsektor (opsional), contoh: "Banks". Kosong = semua.
+    /// Filter subsektor slug kebab-case (opsional), contoh: "banks".
+    /// Kosong = semua emiten.
     #[serde(default)]
     subsector: Option<String>,
-    /// Tanggal acuan laporan kuartalan, format YYYY-MM-DD. Default: 1 tahun lalu.
+    /// Jumlah hasil (opsional, maks 50). Default: 20.
     #[serde(default)]
-    since: Option<String>,
+    limit: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct SubsectorParams {
-    /// Nama subsektor, contoh: "Banks".
+    /// Slug subsektor kebab-case, contoh: "banks".
     subsector: String,
+    /// Section laporan (opsional). Default: ["statistics"] (= 1 kredit).
+    /// Valid: statistics, market_cap, stability, valuation, growth, companies.
     #[serde(default)]
-    since: Option<String>,
+    sections: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct EvidenceParams {
-    /// Kode saham BEI, contoh: "BBCA".
+    /// Kode saham BEI, contoh: "BBCA" (suffix ".JK" opsional).
     ticker: String,
-    /// Field keuangan yang diinginkan, contoh: ["net_interest_margin_q"].
+    /// Jumlah kuartal terbaru (opsional, maks 12). Default: 2.
     #[serde(default)]
-    fields: Option<Vec<String>>,
+    n_quarters: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -72,48 +81,35 @@ struct McpServer {
 
 #[tool_router]
 impl McpServer {
-    /// Tool 1: daftar subsektor unik yang muncul di laporan kuartalan terbaru.
-    #[tool(description = "Daftar subsektor BEI yang muncul di laporan kuartalan terbaru")]
+    /// Tool 1: daftar slug subsektor resmi dari `GET /v2/subsectors/`.
+    #[tool(description = "Daftar slug subsektor BEI resmi (kebab-case)")]
     async fn list_subsectors(&self) -> Result<CallToolResult, McpError> {
-        let since = default_since();
-        match self.client.fetch_quarterly_reports(&since).await {
-            Ok(reports) => {
-                let mut set = std::collections::BTreeSet::new();
-                for r in &reports {
-                    if let Some(v) = r.extra.get("sub_sector").and_then(|v| v.as_str()) {
-                        set.insert(v.to_string());
-                    } else if let Some(v) = r.extra.get("sector").and_then(|v| v.as_str()) {
-                        set.insert(v.to_string());
-                    }
-                }
+        match self.client.fetch_subsectors().await {
+            Ok(items) => {
+                let slugs: Vec<String> = items.into_iter().map(|s| s.subsector).collect();
                 Ok(CallToolResult::success(vec![ContentBlock::text(
-                    serde_json::json!({ "subsectors": set.into_iter().collect::<Vec<_>>() })
-                        .to_string(),
+                    serde_json::json!({ "subsectors": slugs }).to_string(),
                 )]))
             }
             Err(e) => Ok(tool_err(&e)),
         }
     }
 
-    /// Tool 2: skrining emiten kandidat berdasarkan subsektor & periode.
-    #[tool(description = "Skrining emiten kandidat dari laporan kuartalan, bisa difilter subsektor")]
+    /// Tool 2: skrining emiten via `GET /v2/companies/` + filter `where`.
+    #[tool(description = "Skrining emiten kandidat dari Companies Screener, bisa difilter subsektor")]
     async fn screen_companies(
         &self,
         Parameters(params): Parameters<ScreenParams>,
     ) -> Result<CallToolResult, McpError> {
-        let since = params.since.unwrap_or_else(default_since);
-        match self.client.fetch_quarterly_reports(&since).await {
-            Ok(mut reports) => {
-                if let Some(sub) = &params.subsector {
-                    reports.retain(|r| {
-                        r.extra
-                            .get("sub_sector")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.eq_ignore_ascii_case(sub))
-                            .unwrap_or(false)
-                    });
-                }
-                let tickers: Vec<String> = reports.into_iter().map(|r| r.symbol).collect();
+        let limit = params.limit.unwrap_or(20).clamp(1, 50);
+        match self
+            .client
+            .screen_companies(params.subsector.as_deref(), limit)
+            .await
+        {
+            Ok(rows) => {
+                // Normalisasi ke ticker 4 huruf untuk kontrak internal.
+                let tickers: Vec<String> = rows.iter().map(|r| r.ticker_short()).collect();
                 Ok(CallToolResult::success(vec![ContentBlock::text(
                     serde_json::json!({ "tickers": tickers }).to_string(),
                 )]))
@@ -122,69 +118,46 @@ impl McpServer {
         }
     }
 
-    /// Tool 3: laporan agregat kuartalan untuk satu subsektor.
-    #[tool(description = "Ringkasan agregat (jumlah emiten, total pendapatan, laba bersih) per subsektor")]
+    /// Tool 3: laporan agregat subsektor via `GET /v2/subsector/report/{sub}/`.
+    #[tool(description = "Laporan agregat subsektor (default section statistics = 1 kredit)")]
     async fn get_subsector_report(
         &self,
         Parameters(params): Parameters<SubsectorParams>,
     ) -> Result<CallToolResult, McpError> {
-        let since = params.since.unwrap_or_else(default_since);
-        match self.client.fetch_quarterly_reports(&since).await {
-            Ok(reports) => {
-                let filtered: Vec<_> = reports
-                    .into_iter()
-                    .filter(|r| {
-                        r.extra
-                            .get("sub_sector")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.eq_ignore_ascii_case(&params.subsector))
-                            .unwrap_or(false)
-                    })
-                    .collect();
-                let total_revenue: f64 = filtered.iter().filter_map(|r| r.revenue).sum();
-                let total_income: f64 = filtered.iter().filter_map(|r| r.net_income).sum();
-                Ok(CallToolResult::success(vec![ContentBlock::text(
-                    serde_json::json!({
-                        "subsector": params.subsector,
-                        "emiten_count": filtered.len(),
-                        "total_revenue": total_revenue,
-                        "total_net_income": total_income,
-                    })
-                    .to_string(),
-                )]))
-            }
+        let sections: Vec<String> = params
+            .sections
+            .unwrap_or_else(|| vec!["statistics".to_string()]);
+        let section_refs: Vec<&str> = sections.iter().map(|s| s.as_str()).collect();
+        match self
+            .client
+            .fetch_subsector_report(&params.subsector, &section_refs)
+            .await
+        {
+            Ok(report) => Ok(CallToolResult::success(vec![ContentBlock::text(
+                report.to_string(),
+            )])),
             Err(e) => Ok(tool_err(&e)),
         }
     }
 
-    /// Tool 4: evidence mentah metrik keuangan untuk satu ticker.
-    #[tool(description = "Ambil metrik keuangan kuartalan mentah dari Companies Screener v2 untuk satu ticker")]
+    /// Tool 4: evidence mentah keuangan kuartalan via
+    /// `GET /v2/financials/quarterly/{ticker}/`.
+    #[tool(description = "Ambil keuangan kuartalan mentah N periode terakhir untuk satu ticker")]
     async fn get_company_evidence(
         &self,
         Parameters(params): Parameters<EvidenceParams>,
     ) -> Result<CallToolResult, McpError> {
-        let fields: Vec<String> = params.fields.unwrap_or_else(|| {
-            vec![
-                "net_interest_margin_q".into(),
-                "pertumbuhan_laba_q".into(),
-                "pertumbuhan_pendapatan_q".into(),
-            ]
-        });
-        let field_refs: Vec<&str> = fields.iter().map(|s| s.as_str()).collect();
-        match self
-            .client
-            .fetch_financial_metrics(&params.ticker, field_refs)
-            .await
-        {
-            Ok(row) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                serde_json::to_string(&row).unwrap_or_default(),
+        let n = params.n_quarters.unwrap_or(2);
+        match self.client.fetch_quarterly_financials(&params.ticker, n).await {
+            Ok(records) => Ok(CallToolResult::success(vec![ContentBlock::text(
+                serde_json::to_string(&records).unwrap_or_default(),
             )])),
             Err(e) => Ok(tool_err(&e)),
         }
     }
 
     /// Tool 5: snapshot pembanding historis.
-    #[tool(description = "Ambil snapshot metrik historis untuk perbandingan Q_{t-1}")]
+    #[tool(description = "Ambil snapshot metrik historis untuk perbandingan")]
     async fn get_previous_snapshot(
         &self,
         Parameters(params): Parameters<SnapshotParams>,
@@ -228,13 +201,6 @@ impl ServerHandler for McpServer {}
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Default: 365 hari ke belakang (format YYYY-MM-DD).
-fn default_since() -> String {
-    (chrono::Utc::now() - chrono::Duration::days(365))
-        .format("%Y-%m-%d")
-        .to_string()
-}
 
 /// Mapping error Sectors ke tool-level error (pesan terlihat oleh pemanggil).
 fn tool_err(e: &radar_emiten::sectors::error::SectorsError) -> CallToolResult {
