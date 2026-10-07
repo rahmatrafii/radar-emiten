@@ -1,7 +1,7 @@
 // src/main.rs — Entry point demo IDX Sentinel
 
 use radar_emiten::SectorsClient;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

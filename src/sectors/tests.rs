@@ -3,7 +3,9 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::findings::TingkatKeyakinan;
+    use crate::findings::{Finding, TingkatKeyakinan};
+    use crate::sectors::client::{SectorsClient, SectorsConfig};
+    use crate::sectors::error::SectorsError;
     use crate::sectors::models::screener::ScreenerRow;
     use std::collections::HashMap;
 
@@ -153,12 +155,12 @@ mod tests {
     #[test]
     fn test_missing_api_key_error() {
         // Pastikan variabel env tidak ada untuk test ini
-        std::env::remove_var("SECTORS_API_KEY");
+        std::env::set_var("SECTORS_API_KEY", "");
         let result = SectorsClient::new(String::new(), SectorsConfig::default());
         // Empty string key harus error
         // (from_env akan error, new() menerima string — test MissingApiKey via from_env)
         let result_env = {
-            std::env::remove_var("SECTORS_API_KEY");
+            std::env::set_var("SECTORS_API_KEY", "");
             SectorsClient::from_env()
         };
         assert!(

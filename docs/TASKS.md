@@ -20,10 +20,10 @@ Dokumen ini memetakan pembagian tanggung jawab, deliverable spesifik, dan keterg
 
 | No | Modul / Tugas | Deskripsi Deliverable | Output / Kontrak | Status |
 |---|---|---|---|---|
-| R-01 | **Sectors API v2 Client** | Implementasi HTTP Client Rust untuk konsumsi endpoint `/v2/subsectors/`, `/v2/companies/`, `/v2/company/report/`. | Modul `sectors_client` dengan proteksi error HTTP 410. | `Pending` |
-| R-02 | **Caching & Rate-Limiter** | In-memory cache (LRU / TTL) untuk menghindari kehabisan kuota query Sectors API. | Middleware cache dengan waktu kadaluarsa konfigurabel. | `Pending` |
-| R-03 | **MCP Rust Server (`rmcp`)** | Implementasi server MCP berbasis JSON-RPC yang mengekspos 6 core tools: `list_subsectors`, `screen_companies`, `get_subsector_report`, `get_company_evidence`, `get_previous_snapshot`, `record_finding`. | Biner `mcp-server` yang dapat dipanggil oleh backend/agent. | `Pending` |
-| R-04 | **Data DTO & Serialization** | Struct Rust dengan atribut `serde` untuk pemetaan data raw Sectors API v2 ke format konsumsi agen. | Modul `models::sectors`. | `Pending` |
+| R-01 | **Sectors API v2 Client** | Implementasi HTTP Client Rust untuk konsumsi endpoint `/v2/subsectors/`, `/v2/companies/`, `/v2/company/report/`. | Modul `sectors_client` dengan proteksi error HTTP 410. | `Completed` |
+| R-02 | **Caching & Rate-Limiter** | In-memory cache (LRU / TTL) untuk menghindari kehabisan kuota query Sectors API. | Middleware cache dengan waktu kadaluarsa konfigurabel. | `Completed` |
+| R-03 | **MCP Rust Server (`rmcp`)** | Implementasi server MCP berbasis JSON-RPC yang mengekspos 6 core tools: `list_subsectors`, `screen_companies`, `get_subsector_report`, `get_company_evidence`, `get_previous_snapshot`, `record_finding`. | Biner `mcp-server` yang dapat dipanggil oleh backend/agent. | `Completed` |
+| R-04 | **Data DTO & Serialization** | Struct Rust dengan atribut `serde` untuk pemetaan data raw Sectors API v2 ke format konsumsi agen. | Modul `models::sectors`. | `Completed` |
 
 ---
 

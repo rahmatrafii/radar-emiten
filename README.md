@@ -58,14 +58,20 @@ Jalankan instance database lokal menggunakan Docker:
 docker compose up -d
 ```
 
-### 3. Jalankan Backend (orchestrator)
+### 3. Jalankan MCP Server (Data & MCP Layer)
+```bash
+cargo run --bin mcp-server
+```
+Binary `mcp-server` menyediakan 6 core tools via protokol MCP (transport stdio):
+`list_subsectors`, `screen_companies`, `get_subsector_report`, `get_company_evidence`,
+`get_previous_snapshot`, `record_finding`.
+
+### 4. Jalankan Backend (orchestrator)
 ```bash
 cd orchestrator
 cargo run
 ```
 Backend Axum berjalan di port `8080`. Health check: `curl http://localhost:8080/health`.
-
-> Catatan: MCP server (`mcp-server`) disediakan oleh Representative dan belum ada di repo ini.
 
 ---
 

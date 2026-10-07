@@ -23,6 +23,7 @@ pub mod cost {
 ///
 /// # Contoh
 /// ```rust
+/// use radar_emiten::sectors::credits::{cost, CreditTracker};
 /// let tracker = CreditTracker::new(1000);
 /// tracker.charge(cost::QUARTERLY_REPORTS);
 /// println!("Kredit digunakan: {}", tracker.used());

@@ -44,6 +44,8 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Environment variable helper
 dotenvy = "0.15"
+rmcp = { version = "3.5.1", features = ["server", "transport-io", "schemars"] }
+schemars = "1.2.2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
