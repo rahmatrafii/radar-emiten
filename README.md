@@ -1,4 +1,4 @@
-﻿# Financial Market Research Agent 🚀
+# Financial Market Research Agent 🚀
 
 > [!CAUTION]
 > **PENTING / DISCLAIMER:**
@@ -12,24 +12,24 @@
 
 ### Arsitektur Singkat
 ```text
-Sectors API v2 ──► MCP Rust Server ──► Axum Backend + Gemini Flash ──► PostgreSQL ──► WhatsApp Cloud API
+Sectors API v2 ──► MCP Rust Server (stdio) ──► Axum Backend + Gemini 2.0 Flash ──► PostgreSQL ──► WhatsApp Cloud API
 ```
 
 1. **Sectors API v2**: Sumber data pasar modal Indonesia (emiten, sektor, rasio keuangan).
-2. **MCP Rust Server**: Lapisan tool abstraction berkinerja tinggi menggunakan Rust untuk menyediakan data real-time dan snapshot historis.
-3. **Axum Backend + Gemini Flash**: Orkestrator alur agentic multi-stage (Scout, Fundamental, Compliance, Presenter) dengan output terstruktur JSON.
+2. **MCP Rust Server (stdio)**: Lapisan tool abstraction berkinerja tinggi menggunakan Rust untuk menyediakan data real-time dan snapshot historis, berkomunikasi via transport stdio.
+3. **Axum Backend + Gemini 2.0 Flash**: Orkestrator alur agentic multi-stage (Scout, Fundamental, Compliance, Presenter) dengan output terstruktur JSON.
 4. **PostgreSQL**: Penyimpanan snapshot data, log verifikasi evidensi (*audit trail*), dan riwayat *findings*.
 5. **WhatsApp Cloud API**: Pengiriman sinyal informasi dan ringkasan pasar terverifikasi kepada pengguna akhir.
 
 ---
 
-## 👥 Tim Pengembang
+## 👥 Tim Pengembang & Pembagian Tugas
 
 | Nama | Peran | Tanggung Jawab Utama |
 |---|---|---|
-| **Rafiq** | Data & MCP Rust Engineer | Integrasi Sectors API v2, MCP Rust Server (`rmcp`), Caching & Rate-limit Handling |
-| **Dian** | Agent Logic & Prompt Engineer | Desain Master Prompts (JSON Structured Output), Compliance & Rule Guardrails, Few-Shot Test Cases |
-| **Rafi** | Backend & Platform Engineer | Axum Backend Engine, PostgreSQL Schema & Repository, WhatsApp Cloud API Webhook & Alerting |
+| **Dian** | Data & MCP Lead | Integrasi Sectors API v2, Modul `CreditTracker` & `MemCache`, Arsitektur MCP Server Gateway (`stdio`), Seed Baseline Snapshot $Q_{t-1}$ |
+| **Rafiq** | Analyst Agent & Dashboard Lead | Logika Analyst Agent (Perhitungan % Perubahan Fundamental), *Evidence Checker / Evidence Gate* (Filter Penolakan Temuan), Single-Page Dashboard (`dashboard/index.html`) |
+| **Rafi** | Backend & Platform Lead | Axum Backend Engine, Skema Database PostgreSQL, Integrasi Gemini 2.0 Flash (Ekstraksi Tesis), Webhook WhatsApp Business API & *Compliance Filter* |
 
 ---
 
@@ -66,7 +66,14 @@ Binary `mcp-server` menyediakan 6 core tools via protokol MCP (transport stdio):
 `list_subsectors`, `screen_companies`, `get_subsector_report`, `get_company_evidence`,
 `get_previous_snapshot`, `record_finding`.
 
-### 4. Jalankan Backend (orchestrator)
+### 4. Build Binary MCP Server
+Sebelum menjalankan orchestrator, pastikan binary `mcp-server` sudah ter-build:
+```bash
+cargo build --bin mcp-server
+```
+Binary hasil build akan berada di `target/debug/mcp-server` (atau `target/release/mcp-server` jika menggunakan flag `--release`). Orchestrator akan me-spawn binary ini via transport **stdio**.
+
+### 5. Jalankan Backend (orchestrator)
 ```bash
 cd orchestrator
 cargo run
