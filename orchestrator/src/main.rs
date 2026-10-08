@@ -22,6 +22,13 @@ async fn main() {
         .await
         .expect("Gagal konek ke PostgreSQL");
 
+    tracing::info!("Menjalankan migrasi skema database...");
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Gagal menjalankan migrasi skema database");
+    tracing::info!("Migrasi skema database selesai.");
+
     let state = AppState::new(pool, config.clone());
     let app = routes::routes().with_state(state.clone());
 

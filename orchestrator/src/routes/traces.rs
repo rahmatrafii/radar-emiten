@@ -1,7 +1,12 @@
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::State,
+    http::HeaderMap,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::auth;
 use crate::errors::AppError;
 use crate::repositories::traces;
 use crate::state::AppState;
@@ -27,9 +32,15 @@ pub struct IngestTrace {
 }
 
 pub async fn post_trace(
+    headers: HeaderMap,
     State(state): State<AppState>,
     Json(body): Json<IngestTrace>,
 ) -> Result<Json<Value>, AppError> {
+    if let Some(token) = state.config.internal_api_token.as_deref() {
+        if !token.is_empty() && !auth::require_internal_token(&headers, &state.config) {
+            return Err(AppError::Unauthorized);
+        }
+    }
     let agent = body.agent.trim().to_lowercase();
     if !ALLOWED_AGENTS.contains(&agent.as_str()) {
         return Err(AppError::BadRequest(format!(

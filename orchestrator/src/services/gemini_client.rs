@@ -67,6 +67,62 @@ impl GeminiClient {
     }
 
     async fn real_extract(&self, text: &str) -> Result<ExtractedThesis, AppError> {
+        if self.config.llm_provider.eq_ignore_ascii_case("deepseek") || self.config.deepseek_api_key.is_some() {
+            if let Some(key) = self.config.deepseek_api_key.as_deref() {
+                return self.deepseek_extract(text, key).await;
+            }
+        }
+        self.gemini_extract(text).await
+    }
+
+    async fn deepseek_extract(&self, text: &str, key: &str) -> Result<ExtractedThesis, AppError> {
+        let model = self
+            .config
+            .deepseek_model
+            .as_deref()
+            .unwrap_or("deepseek-chat");
+
+        let prompt_system = format!(
+            "Anda adalah agen ekstraksi tesis pemantauan saham. Dari kalimat pengguna, keluarkan HANYA JSON valid dengan schema: \
+             {{\"ticker\": \"<4 huruf kapital>\", \"metrics\": [{{\"metric_name\": \"<salah satu dari registry>\", \"desired_direction\": \"increase|decrease|any\"}}]}}. \
+             Registry metric: {}. Maksimal 3 metric. Jangan menulis teks lain di luar JSON.",
+            metrics::metric_registry().join(", ")
+        );
+
+        let url = "https://api.deepseek.com/chat/completions";
+        let body = serde_json::json!({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": prompt_system},
+                {"role": "user", "content": text}
+            ],
+            "response_format": {"type": "json_object"}
+        });
+
+        let res = self
+            .http
+            .post(url)
+            .bearer_auth(key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AppError::External(format!("gagal menghubungi DeepSeek: {e}")))?;
+
+        let status = res.status();
+        let json: serde_json::Value = res.json().await.unwrap_or(serde_json::Value::Null);
+        if !status.is_success() {
+            return Err(AppError::External(format!("DeepSeek error {status}: {json}")));
+        }
+
+        let content = json
+            .pointer("/choices/0/message/content")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::External("respons DeepSeek tanpa konten".into()))?;
+
+        parse_extracted(content)
+    }
+
+    async fn gemini_extract(&self, text: &str) -> Result<ExtractedThesis, AppError> {
         let key = self
             .config
             .gemini_api_key
@@ -112,6 +168,8 @@ impl GeminiClient {
         parse_extracted(text)
     }
 }
+
+pub type LlmClient = GeminiClient;
 
 /// Parse output Gemini/LLM: toleran terhadap code fence, tapi ketat pada schema.
 pub fn parse_extracted(raw: &str) -> Result<ExtractedThesis, AppError> {
@@ -237,4 +295,27 @@ pub fn mock_extract(text: &str) -> Result<ExtractedThesis, AppError> {
     };
     validate_extracted(&extracted).map_err(AppError::BadRequest)?;
     Ok(extracted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_extracted_deepseek_json() {
+        let json = r#"{"ticker":"BBCA","metrics":[{"metric_name":"net_profit_margin","desired_direction":"increase"}]}"#;
+        let res = parse_extracted(json).expect("valid parse");
+        assert_eq!(res.ticker, "BBCA");
+        assert_eq!(res.metrics.len(), 1);
+        assert_eq!(res.metrics[0].metric_name, "net_profit_margin");
+        assert_eq!(res.metrics[0].desired_direction, "increase");
+    }
+
+    #[test]
+    fn parse_extracted_deepseek_with_markdown_fences() {
+        let text = "```json\n{\"ticker\":\"TLKM\",\"metrics\":[{\"metric_name\":\"revenue\",\"desired_direction\":\"any\"}]}\n```";
+        let res = parse_extracted(text).expect("valid parse with markdown");
+        assert_eq!(res.ticker, "TLKM");
+        assert_eq!(res.metrics[0].metric_name, "revenue");
+    }
 }

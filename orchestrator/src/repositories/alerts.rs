@@ -54,3 +54,23 @@ pub async fn mark_status(pool: &PgPool, alert_id: i64, status: &str) -> sqlx::Re
         .await?;
     Ok(())
 }
+
+pub async fn find_existing(
+    pool: &PgPool,
+    pengguna_id: i64,
+    tesis_id: i64,
+    metric_name: &str,
+    period: &str,
+) -> sqlx::Result<Option<(i64, String)>> {
+    let row: Option<(i64, String)> = sqlx::query_as(
+        "SELECT id, status_kirim FROM alerts \
+         WHERE pengguna_id=$1 AND tesis_id=$2 AND metric_name=$3 AND period=$4",
+    )
+    .bind(pengguna_id)
+    .bind(tesis_id)
+    .bind(metric_name)
+    .bind(period)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}

@@ -1,6 +1,11 @@
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::State,
+    http::HeaderMap,
+};
 use serde_json::{Value, json};
 
+use crate::auth;
 use crate::errors::AppError;
 use crate::models::finding::Finding;
 use crate::repositories::{compliance, findings, traces};
@@ -230,8 +235,14 @@ pub async fn accept_finding(state: &AppState, finding: Finding) -> Result<Json<V
 }
 
 pub async fn post_finding(
+    headers: HeaderMap,
     State(state): State<AppState>,
     Json(finding): Json<Finding>,
 ) -> Result<Json<Value>, AppError> {
+    if let Some(token) = state.config.internal_api_token.as_deref() {
+        if !token.is_empty() && !auth::require_internal_token(&headers, &state.config) {
+            return Err(AppError::Unauthorized);
+        }
+    }
     accept_finding(&state, finding).await
 }

@@ -76,6 +76,46 @@ impl QuarterlyFinancials {
         None
     }
 
+    /// Mengambil metrik dengan fallback kalkulasi turunan (derived metrics).
+    /// Mendukung net_profit_margin (dari earnings/revenue), operating_margin,
+    /// gross_margin, dan alias net_income (dari earnings).
+    pub fn extract_metric(&self, name: &str) -> Option<f64> {
+        if let Some(v) = self.metric(name) {
+            return Some(v);
+        }
+        match name {
+            "net_profit_margin" => {
+                let earnings = self.metric("earnings").or_else(|| self.metric("net_income"))?;
+                let revenue = self.metric("revenue")?;
+                if revenue != 0.0 {
+                    Some((earnings / revenue) * 100.0)
+                } else {
+                    None
+                }
+            }
+            "net_income" => self.metric("earnings"),
+            "operating_margin" => {
+                let op = self.metric("operating_profit").or_else(|| self.metric("operating_income"))?;
+                let revenue = self.metric("revenue")?;
+                if revenue != 0.0 {
+                    Some((op / revenue) * 100.0)
+                } else {
+                    None
+                }
+            }
+            "gross_margin" => {
+                let gp = self.metric("gross_profit")?;
+                let revenue = self.metric("revenue")?;
+                if revenue != 0.0 {
+                    Some((gp / revenue) * 100.0)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Ticker 4 huruf untuk kontrak internal (orchestrator validasi `^[A-Z]{4}$`).
     /// `"BBCA.JK"` → `"BBCA"`.
     pub fn ticker_short(&self) -> String {

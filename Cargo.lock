@@ -1112,6 +1112,7 @@ dependencies = [
  "dotenvy",
  "hex",
  "hmac",
+ "radar-emiten",
  "reqwest",
  "serde",
  "serde_json",
