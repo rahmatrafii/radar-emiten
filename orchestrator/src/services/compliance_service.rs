@@ -24,23 +24,34 @@ pub struct ComplianceCheckResult {
 /// Semua entri dalam huruf kecil; pencocokan dilakukan case-insensitive.
 pub const PROHIBITED_WORDS: &[&str] = &[
     "beli",
+    "membeli",
     "buy",
     "jual",
+    "menjual",
+    "dijual",
     "sell",
     "tahan",
     "hold",
     "rekomendasi",
+    "rekomendasikan",
     "recommend",
     "target harga",
     "price target",
     "cuan",
     "serok",
+    "borong",
+    "haka",
     "to the moon",
     "all-in",
     "pom-pom",
     "potensi untung",
     "jaminan return",
     "floating profit",
+    "take profit",
+    "cut loss",
+    "titip sendal",
+    "akumulasi",
+    "entry",
 ];
 
 /// Periksa satu teks terhadap daftar kata terlarang.
@@ -205,5 +216,17 @@ mod tests {
     fn teks_kosong_lolos() {
         let r = check_compliance("");
         assert!(r.is_compliant);
+    }
+
+    #[test]
+    fn imbuhan_dan_slang_terdeteksi() {
+        let r = check_compliance("Waktunya membeli saham BBCA dan borong sekarang");
+        assert!(!r.is_compliant);
+        assert!(r.prohibited_words_detected.contains(&"membeli".to_string()));
+        assert!(r.prohibited_words_detected.contains(&"borong".to_string()));
+
+        let r2 = check_compliance("Saham ini sudah dijual oleh pemegang saham");
+        assert!(!r2.is_compliant);
+        assert!(r2.prohibited_words_detected.contains(&"dijual".to_string()));
     }
 }

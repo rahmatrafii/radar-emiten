@@ -87,6 +87,14 @@ mod tests {
         assert_eq!(rec.ticker_short(), "BBCA");
     }
 
+    #[test]
+    fn test_quarterly_financials_extract_derived_metrics() {
+        let rec = financials("BBCA.JK", "2026-06-30", 100.0, 25.0, None);
+        assert_eq!(rec.extract_metric("net_profit_margin"), Some(25.0));
+        assert_eq!(rec.extract_metric("net_income"), Some(25.0));
+        assert_eq!(rec.extract_metric("unknown_metric"), None);
+    }
+
     // -----------------------------------------------------------------------
     // financials_to_findings: latest vs previous quarter
     // -----------------------------------------------------------------------

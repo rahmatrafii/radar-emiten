@@ -6,6 +6,9 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub database_url: String,
+    pub llm_provider: String,
+    pub deepseek_api_key: Option<String>,
+    pub deepseek_model: Option<String>,
     pub gemini_api_key: Option<String>,
     pub gemini_model: Option<String>,
     pub whatsapp_access_token: Option<String>,
@@ -34,6 +37,40 @@ pub enum AppMode {
     Real,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            app_mode: AppMode::Mock,
+            host: "127.0.0.1".into(),
+            port: 8080,
+            database_url: "postgres://postgres:postgres@localhost:5434/idx_sentinel".into(),
+            llm_provider: "deepseek".into(),
+            deepseek_api_key: None,
+            deepseek_model: None,
+            gemini_api_key: None,
+            gemini_model: None,
+            whatsapp_access_token: None,
+            whatsapp_phone_number_id: None,
+            whatsapp_app_secret: None,
+            whatsapp_verify_token: None,
+            whatsapp_graph_api_version: None,
+            whatsapp_template_name: None,
+            whatsapp_template_language: None,
+            admin_phone: None,
+            internal_api_token: None,
+            sectors_credit_budget: 1000.0,
+            max_alerts_per_day: 3,
+            neutral_relative_threshold: 0.02,
+            scheduler_interval_seconds: 86400,
+            mcp_transport: None,
+            mcp_server_command: None,
+            mcp_server_args: None,
+            mcp_callback_base_url: None,
+            policy_disclaimer_conflict_acknowledged: true,
+        }
+    }
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         let app_mode = match env::var("APP_MODE").as_deref() {
@@ -49,11 +86,24 @@ impl Config {
             .and_then(|p| p.parse().ok())
             .unwrap_or(8080);
 
+        let deepseek_api_key = opt("DEEPSEEK_API_KEY");
+        let deepseek_model = opt("DEEPSEEK_MODEL");
+        let llm_provider = env::var("LLM_PROVIDER").unwrap_or_else(|_| {
+            if deepseek_api_key.is_some() {
+                "deepseek".to_string()
+            } else {
+                "gemini".to_string()
+            }
+        });
+
         let cfg = Self {
             app_mode,
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             port,
             database_url,
+            llm_provider,
+            deepseek_api_key,
+            deepseek_model,
             gemini_api_key: opt("GEMINI_API_KEY"),
             gemini_model: opt("GEMINI_MODEL"),
             whatsapp_access_token: opt("WHATSAPP_ACCESS_TOKEN"),
@@ -99,8 +149,12 @@ impl Config {
     }
 
     fn validate_real_mode(&self) -> Result<(), ConfigError> {
+        if self.deepseek_api_key.is_none() && self.gemini_api_key.is_none() {
+            return Err(ConfigError::MissingRealCredential(
+                "DEEPSEEK_API_KEY atau GEMINI_API_KEY",
+            ));
+        }
         let required = [
-            ("GEMINI_API_KEY", &self.gemini_api_key),
             ("WHATSAPP_ACCESS_TOKEN", &self.whatsapp_access_token),
             ("WHATSAPP_PHONE_NUMBER_ID", &self.whatsapp_phone_number_id),
             ("WHATSAPP_APP_SECRET", &self.whatsapp_app_secret),

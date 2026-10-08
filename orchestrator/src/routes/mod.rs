@@ -44,6 +44,12 @@ pub fn routes() -> Router<AppState> {
         .route("/api/kredit", axum::routing::get(dashboard::api_credits))
         .nest_service(
             "/dashboard",
-            tower_http::services::ServeDir::new("../dashboard"),
+            tower_http::services::ServeDir::new(if std::path::Path::new("dashboard").exists() {
+                "dashboard"
+            } else if std::path::Path::new("../dashboard").exists() {
+                "../dashboard"
+            } else {
+                "dashboard"
+            }),
         )
 }

@@ -18,29 +18,8 @@ async fn pool() -> Option<PgPool> {
 fn mock_config() -> Config {
     Config {
         app_mode: AppMode::Mock,
-        host: "127.0.0.1".into(),
-        port: 8080,
-        database_url: String::new(),
-        gemini_api_key: None,
-        gemini_model: None,
-        whatsapp_access_token: None,
-        whatsapp_phone_number_id: None,
-        whatsapp_app_secret: None,
-        whatsapp_verify_token: None,
-        whatsapp_graph_api_version: None,
-        whatsapp_template_name: None,
-        whatsapp_template_language: None,
-        admin_phone: None,
-        internal_api_token: None,
-        sectors_credit_budget: 1000.0,
-        max_alerts_per_day: 3,
-        neutral_relative_threshold: 0.02,
-        scheduler_interval_seconds: 86400,
-        mcp_transport: None,
-        mcp_server_command: None,
-        mcp_server_args: None,
-        mcp_callback_base_url: None,
-        policy_disclaimer_conflict_acknowledged: true, // Tes mock menguji alur dispatch penuh; tanpa ini send_alert selalu blocked (sesuai hard gate).
+        policy_disclaimer_conflict_acknowledged: true,
+        ..Default::default()
     }
 }
 

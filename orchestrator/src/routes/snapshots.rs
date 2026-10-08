@@ -1,10 +1,12 @@
 use axum::{
     Json,
     extract::{Query, State},
+    http::HeaderMap,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::auth;
 use crate::errors::AppError;
 use crate::metrics;
 use crate::repositories::snapshots;
@@ -23,9 +25,15 @@ pub struct IngestSnapshot {
 }
 
 pub async fn post_snapshot(
+    headers: HeaderMap,
     State(state): State<AppState>,
     Json(body): Json<IngestSnapshot>,
 ) -> Result<Json<Value>, AppError> {
+    if let Some(token) = state.config.internal_api_token.as_deref() {
+        if !token.is_empty() && !auth::require_internal_token(&headers, &state.config) {
+            return Err(AppError::Unauthorized);
+        }
+    }
     if body.ticker.len() > 10
         || !body
             .ticker

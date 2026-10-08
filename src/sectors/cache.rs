@@ -1,7 +1,6 @@
 // src/sectors/cache.rs — In-Memory Cache dengan TTL 24 jam
 
 use chrono::{DateTime, Duration, Utc};
-use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
 use std::sync::RwLock;
 use tracing::{debug, info};

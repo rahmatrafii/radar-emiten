@@ -81,16 +81,30 @@ pub async fn route(
 
         "/bukti" => {
             return match findings::latest_accepted_for_user(&state.pool, user_id).await? {
-                Some(f) => Ok(format!(
-                    "Bukti terakhir:\nTicker: {}\nMetric: {}\nPeriode: {}\nSebelumnya: {:?}\nSekarang: {:?}\nSumber: {}\nConfidence: {:?}",
-                    f.ticker.unwrap_or_default(),
-                    f.metric_name.unwrap_or_default(),
-                    f.period.unwrap_or_default(),
-                    f.previous_value,
-                    f.current_value,
-                    f.source.unwrap_or_default(),
-                    f.confidence_score,
-                )),
+                Some(f) => {
+                    let prev_str = f
+                        .previous_value
+                        .map(|v| format!("{v:.2}"))
+                        .unwrap_or_else(|| "-".into());
+                    let curr_str = f
+                        .current_value
+                        .map(|v| format!("{v:.2}"))
+                        .unwrap_or_else(|| "-".into());
+                    let conf_str = f
+                        .confidence_score
+                        .map(|v| format!("{:.0}%", v * 100.0))
+                        .unwrap_or_else(|| "-".into());
+                    Ok(format!(
+                        "Bukti terakhir:\nTicker: {}\nMetric: {}\nPeriode: {}\nSebelumnya: {}\nSekarang: {}\nSumber: {}\nConfidence: {}",
+                        f.ticker.unwrap_or_default(),
+                        f.metric_name.unwrap_or_default(),
+                        f.period.unwrap_or_default(),
+                        prev_str,
+                        curr_str,
+                        f.source.unwrap_or_default(),
+                        conf_str,
+                    ))
+                }
                 None => Ok("Belum ada finding lolos untuk tesis Anda.".into()),
             };
         }

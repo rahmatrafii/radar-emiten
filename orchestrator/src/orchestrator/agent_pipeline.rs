@@ -1,4 +1,4 @@
-﻿//! `orchestrator::AgentPipeline` — pengendali alur satu siklus pemantauan.
+//! `orchestrator::AgentPipeline` — pengendali alur satu siklus pemantauan.
 //!
 //! Prinsip: angka dan aturan ditetapkan Rust secara deterministik; LLM tidak
 //! menjadi sumber angka. Setiap kegagalan HTTP eksternal tetap meninggalkan
@@ -123,11 +123,11 @@ impl AgentPipeline {
     ) -> Result<(), String> {
         let pool = &self.state.pool;
 
-        // 1. Ambil evidence melalui MCP gateway (data Sectors milik Rafi).
+        // 1. Ambil evidence melalui MCP gateway (data Sectors).
         let evidence = self
             .state
             .mcp
-            .get_company_evidence(ticker.to_string(), None)
+            .get_company_evidence(ticker.to_string(), Some(metric_name.to_string()), None)
             .await
             .map_err(|e| format!("mcp evidence: {e}"))?;
         let _ = traces::trace(
@@ -224,29 +224,46 @@ impl AgentPipeline {
             ),
         };
 
-        // 5. Evidence gate + compliance audit via jalur yang sama dengan POST /findings.
-        let response = accept_finding(&self.state, finding.clone())
-            .await
-            .map_err(|e| format!("accept_finding: {e:?}"))?;
-        let accepted = response.0.get("status").and_then(|v| v.as_str()) == Some("accepted");
-        let finding_id = response.0.get("finding_id").and_then(|v| v.as_i64());
+        // 5. Cek apakah finding untuk periode ini sudah pernah lolos verifikasi.
+        let existing_finding_id: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM findings WHERE ticker=$1 AND metric_name=$2 AND period=$3 \
+             AND status='lolos' ORDER BY id DESC LIMIT 1",
+        )
+        .bind(ticker)
+        .bind(metric_name)
+        .bind(&evidence.period)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
 
-        if !accepted {
-            report.findings_rejected += 1;
-            let _ = traces::trace(
-                pool,
-                "compliance",
-                "finding_rejected",
-                Some("rejected"),
-                Some(ticker),
-                Some(serde_json::json!({"metric": metric_name})),
-            )
-            .await;
-            return Ok(());
-        }
-        report.findings_accepted += 1;
-        let Some(finding_id) = finding_id else {
-            return Ok(());
+        let finding_id = if let Some(fid) = existing_finding_id {
+            fid
+        } else {
+            // Evidence gate + compliance audit via jalur yang sama dengan POST /findings.
+            let response = accept_finding(&self.state, finding.clone())
+                .await
+                .map_err(|e| format!("accept_finding: {e:?}"))?;
+            let accepted = response.0.get("status").and_then(|v| v.as_str()) == Some("accepted");
+            let fid = response.0.get("finding_id").and_then(|v| v.as_i64());
+
+            if !accepted {
+                report.findings_rejected += 1;
+                let _ = traces::trace(
+                    pool,
+                    "compliance",
+                    "finding_rejected",
+                    Some("rejected"),
+                    Some(ticker),
+                    Some(serde_json::json!({"metric": metric_name})),
+                )
+                .await;
+                return Ok(());
+            }
+            report.findings_accepted += 1;
+            match fid {
+                Some(id) => id,
+                None => return Ok(()),
+            }
         };
 
         // 6. Hubungkan ke tesis yang memantau ticker/metric ini + tentukan arah.
@@ -276,7 +293,6 @@ impl AgentPipeline {
     ) {
         let pool = &self.state.pool;
         let finding_id: i64 = {
-            // Ambil id dari tabel findings via kolom unik; aman karena accepted.
             let row: Option<(i64,)> = sqlx::query_as(
                 "SELECT id FROM findings WHERE ticker=$1 AND metric_name=$2 AND period=$3 \
                  AND status='lolos' ORDER BY id DESC LIMIT 1",
@@ -292,6 +308,17 @@ impl AgentPipeline {
                 None => return,
             }
         };
+
+        // Cek riwayat alert untuk kombinasi unik ini
+        let existing = alerts::find_existing(pool, w.pengguna_id, w.tesis_id, metric_name, &finding.period)
+            .await
+            .unwrap_or(None);
+
+        if let Some((_id, ref status)) = existing {
+            if status == "terkirim" {
+                return; // Sudah pernah terkirim untuk periode ini
+            }
+        }
 
         // Cooldown/mute: jeda_sampai di masa depan -> tidak ada alert proaktif.
         match users::is_muted(pool, w.pengguna_id).await {
@@ -315,19 +342,21 @@ impl AgentPipeline {
         if let Ok(count) = alerts::count_sent_today(pool, w.pengguna_id).await
             && count >= self.state.config.max_alerts_per_day as i64
         {
-            if let Ok(id) = alerts::insert(
-                pool,
-                w.pengguna_id,
-                w.tesis_id,
-                finding_id,
-                metric_name,
-                &finding.period,
-                &format!("{ticker} · {metric_name}"),
-                "ditunda: batas alert harian tercapai",
-            )
-            .await
-            {
-                let _ = alerts::mark_status(pool, id, "ditunda").await;
+            if existing.is_none() {
+                if let Ok(id) = alerts::insert(
+                    pool,
+                    w.pengguna_id,
+                    w.tesis_id,
+                    finding_id,
+                    metric_name,
+                    &finding.period,
+                    &format!("{ticker} · {metric_name}"),
+                    "ditunda: batas alert harian tercapai",
+                )
+                .await
+                {
+                    let _ = alerts::mark_status(pool, id, "ditunda").await;
+                }
             }
             report.alerts_deferred += 1;
             let _ = traces::trace(
@@ -342,47 +371,47 @@ impl AgentPipeline {
             return;
         }
 
-        // Insert unik (pengguna+tesis+metric+period). Duplikat -> cukup 1 alert.
-        let alert_id = alerts::insert(
-            pool,
-            w.pengguna_id,
-            w.tesis_id,
-            finding_id,
-            metric_name,
-            &finding.period,
-            &format!("{ticker} · {metric_name}"),
-            "alert pending",
-        )
-        .await;
-        let alert_id = match alert_id {
-            Ok(id) => id,
-            Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
-                let _ = traces::trace(
-                    pool,
-                    "dispatcher",
-                    "alert_duplicate",
-                    Some("unique_violation"),
-                    Some(ticker),
-                    None,
-                )
-                .await;
-                return;
-            }
-            Err(_) => return,
-        };
-
-        // Bangun payload dari template Rust (bukan LLM bebas).
+        // Bangun payload dari template Rust dengan angka terformat rapi.
+        let prev_formatted = format_num(&finding.previous_value);
+        let curr_formatted = format_num(&finding.current_value);
         let header = format!("{ticker} · {metric_name}");
         let body = format!(
-            "Nilai periode pembanding: {:?}. Nilai terbaru: {:?}. Periode: {}. Arah: {}. Sumber: {}.",
-            finding.previous_value, finding.current_value, finding.period, arah, finding.source
+            "Nilai periode pembanding: {prev_formatted}. Nilai terbaru: {curr_formatted}. Periode: {}. Arah: {}. Sumber: {}.",
+            finding.period, arah, finding.source
         );
         let payload = WhatsAppAlertPayload {
             recipient_number: w.nomor_wa.clone(),
-            header,
+            header: header.clone(),
             body,
             disclaimer: DISCLAIMER_RESMI.into(),
         };
+        let full_text = format!("{}\n\n{}\n\n{}", payload.header, payload.body, payload.disclaimer);
+
+        let alert_id = if let Some((existing_id, ref status)) = existing {
+            if status == "ditunda" {
+                existing_id
+            } else {
+                return;
+            }
+        } else {
+            let res = alerts::insert(
+                pool,
+                w.pengguna_id,
+                w.tesis_id,
+                finding_id,
+                metric_name,
+                &finding.period,
+                &header,
+                &full_text,
+            )
+            .await;
+            match res {
+                Ok(id) => id,
+                Err(sqlx::Error::Database(e)) if e.is_unique_violation() => return,
+                Err(_) => return,
+            }
+        };
+
         let outcome = self.state.whatsapp.send_alert(&payload).await;
         match outcome {
             Ok(o) if o.status == "mock_sent" || o.status == "sent" => {
@@ -423,6 +452,26 @@ impl AgentPipeline {
                 .await;
             }
         }
+    }
+}
+
+fn format_num(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Number(n) => {
+            if let Some(f) = n.as_f64() {
+                format!("{:.2}", f)
+            } else {
+                n.to_string()
+            }
+        }
+        serde_json::Value::String(s) => {
+            if let Ok(f) = s.parse::<f64>() {
+                format!("{:.2}", f)
+            } else {
+                s.clone()
+            }
+        }
+        _ => "-".to_string(),
     }
 }
 

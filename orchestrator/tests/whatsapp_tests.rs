@@ -6,29 +6,11 @@ use orchestrator::services::whatsapp_client::WhatsAppClient;
 fn cfg(mode: AppMode, ack_conflict: bool) -> Config {
     Config {
         app_mode: mode,
-        host: "127.0.0.1".into(),
         port: 0,
         database_url: "postgres://unused".into(),
-        gemini_api_key: None,
-        gemini_model: None,
-        whatsapp_access_token: None,
-        whatsapp_phone_number_id: None,
-        whatsapp_app_secret: None,
-        whatsapp_verify_token: None,
-        whatsapp_graph_api_version: None,
-        whatsapp_template_name: None,
-        whatsapp_template_language: None,
-        admin_phone: None,
         internal_api_token: Some("t".into()),
-        sectors_credit_budget: 1000.0,
-        max_alerts_per_day: 3,
-        neutral_relative_threshold: 0.02,
-        scheduler_interval_seconds: 86400,
-        mcp_transport: None,
-        mcp_server_command: None,
-        mcp_server_args: None,
-        mcp_callback_base_url: None,
         policy_disclaimer_conflict_acknowledged: ack_conflict,
+        ..Default::default()
     }
 }
 

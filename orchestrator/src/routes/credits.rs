@@ -1,7 +1,12 @@
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::State,
+    http::HeaderMap,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::auth;
 use crate::errors::AppError;
 use crate::repositories::credits;
 use crate::state::AppState;
@@ -15,9 +20,15 @@ pub struct IngestCredit {
 }
 
 pub async fn post_credit(
+    headers: HeaderMap,
     State(state): State<AppState>,
     Json(body): Json<IngestCredit>,
 ) -> Result<Json<Value>, AppError> {
+    if let Some(token) = state.config.internal_api_token.as_deref() {
+        if !token.is_empty() && !auth::require_internal_token(&headers, &state.config) {
+            return Err(AppError::Unauthorized);
+        }
+    }
     if body.endpoint.trim().is_empty() {
         return Err(AppError::BadRequest("endpoint wajib diisi".into()));
     }

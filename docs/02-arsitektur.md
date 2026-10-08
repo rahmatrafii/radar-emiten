@@ -43,7 +43,7 @@ Prinsip: **kode Rust menghitung angka dan menegakkan aturan; LLM hanya memahami 
 | `list_subsectors` | Daftar slug subsektor (`banks`, dst) |
 | `screen_companies` | Saring emiten per subsektor |
 | `get_subsector_report` | Agregat subsektor (wajib param `sections` eksplisit — default 6 section = 6 kredit) |
-| `get_company_evidence` | Fundamental 1 emiten (bukti audit) |
+| `get_company_evidence` | Fundamental 1 emiten (bukti audit; didukung ekstraksi metric otomatis dan kalkulasi rasio turunan via `SectorsClient`) |
 | `get_previous_snapshot` | Snapshot pembanding (didelegasikan ke `GET /internal/snapshots/previous`) |
 | `record_finding` | Simpan Finding (didelegasikan ke `POST /internal/findings`) |
 

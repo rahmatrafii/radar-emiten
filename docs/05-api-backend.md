@@ -7,11 +7,11 @@ Daftar ini disalin dari `orchestrator/src/routes/mod.rs:16-49`. Tidak ada endpoi
 | Method + Path | Fungsi | Auth |
 |---|---|---|
 | `GET /health` | Cek hidup + koneksi DB (`{"status":"ok","database":"ok"}`) | — |
-| `POST /snapshots` | Simpan/upsert snapshot observasi | — |
+| `POST /snapshots` | Simpan/upsert snapshot observasi | `INTERNAL_API_TOKEN` (jika disetel) |
 | `GET /snapshots?ticker=&metric_name=&limit=` | Baca riwayat snapshot (`ticker` + `metric_name` wajib) | — |
-| `POST /findings` | Terima `Finding` → gate → `accepted`/`rejected` | — |
-| `POST /jejak` | Catat langkah agent (`agent` harus salah satu dari 8 nama resmi) | — |
-| `POST /kredit` | Catat pemakaian kredit Sectors | — |
+| `POST /findings` | Terima `Finding` → gate → `accepted`/`rejected` | `INTERNAL_API_TOKEN` (jika disetel) |
+| `POST /jejak` | Catat langkah agent (`agent` harus salah satu dari 8 nama resmi) | `INTERNAL_API_TOKEN` (jika disetel) |
+| `POST /kredit` | Catat pemakaian kredit Sectors | `INTERNAL_API_TOKEN` (jika disetel) |
 | `GET /pantauan` | Ticker + metric dari tesis aktif (tanpa nomor WA) | — |
 | `GET /webhook/whatsapp` | Verifikasi webhook Meta (`hub.mode/verify_token/challenge`) | verify token |
 | `POST /webhook/whatsapp` | Terima pesan (HMAC-SHA256 `X-Hub-Signature-256` + dedupe `wa_message_id`) | app secret |
@@ -22,7 +22,7 @@ Daftar ini disalin dari `orchestrator/src/routes/mod.rs:16-49`. Tidak ada endpoi
 | `GET /api/ditolak` | Finding `ditolak` + alasan | — |
 | `GET /api/jejak` | Jejak agent | — |
 | `GET /api/kredit` | Budget vs terpakai vs sisa | — |
-| `GET /dashboard` | File statis `dashboard/index.html` | — |
+| `GET /dashboard` | File statis `dashboard/index.html` (resolusi fleksibel) | — |
 
 Semua list mendukung `?limit=&offset=` (default 50, maks 200).
 
