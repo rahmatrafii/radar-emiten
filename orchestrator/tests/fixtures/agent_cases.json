@@ -1,0 +1,132 @@
+[
+  {
+    "case_id": "case_001",
+    "description": "Perbankan (TSTA): laba naik, compliant, evidence cocok → accepted",
+    "sector": "banks",
+    "input": {
+      "ticker": "TSTA",
+      "subsector": "banks",
+      "metric_name": "roe",
+      "current_value": 12.5,
+      "previous_value": 10.0,
+      "period": "Q1 2026",
+      "source": "fixture-case-001",
+      "observed_at": "2026-04-01T00:00:00Z",
+      "confidence_score": 0.9,
+      "finding_summary": "ROE TSTA periode Q1 2026 tercatat 12.50, naik dibanding periode pembanding 10.00."
+    },
+    "setup_snapshots": [
+      { "period": "Q1 2026", "value": 12.5 },
+      { "period": "Q4 2025", "value": 10.0 }
+    ],
+    "expected": {
+      "status": "accepted",
+      "is_compliant": true,
+      "evidence_verified": true
+    }
+  },
+  {
+    "case_id": "case_002",
+    "description": "Telekomunikasi (TSTB): laba turun, compliant, evidence cocok → accepted",
+    "sector": "telecommunication",
+    "input": {
+      "ticker": "TSTB",
+      "subsector": "telecommunication",
+      "metric_name": "net_profit_margin",
+      "current_value": 8.0,
+      "previous_value": 10.0,
+      "period": "Q1 2026",
+      "source": "fixture-case-002",
+      "observed_at": "2026-04-01T00:00:00Z",
+      "confidence_score": 0.9,
+      "finding_summary": "Net profit margin TSTB periode Q1 2026 tercatat 8.00, turun dibanding periode pembanding 10.00."
+    },
+    "setup_snapshots": [
+      { "period": "Q1 2026", "value": 8.0 },
+      { "period": "Q4 2025", "value": 10.0 }
+    ],
+    "expected": {
+      "status": "accepted",
+      "is_compliant": true,
+      "evidence_verified": true
+    }
+  },
+  {
+    "case_id": "case_003",
+    "description": "Komoditas (TSTC): valuasi berubah, compliant, evidence cocok → accepted",
+    "sector": "commodities",
+    "input": {
+      "ticker": "TSTC",
+      "subsector": "commodities",
+      "metric_name": "gross_margin",
+      "current_value": 20.0,
+      "previous_value": 18.0,
+      "period": "Q1 2026",
+      "source": "fixture-case-003",
+      "observed_at": "2026-04-01T00:00:00Z",
+      "confidence_score": 0.9,
+      "finding_summary": "Gross margin TSTC periode Q1 2026 tercatat 20.00, naik dibanding periode pembanding 18.00."
+    },
+    "setup_snapshots": [
+      { "period": "Q1 2026", "value": 20.0 },
+      { "period": "Q4 2025", "value": 18.0 }
+    ],
+    "expected": {
+      "status": "accepted",
+      "is_compliant": true,
+      "evidence_verified": true
+    }
+  },
+  {
+    "case_id": "case_004",
+    "description": "Perbankan (TSTD): summary mengandung kata terlarang 'beli' → rejected (compliance)",
+    "sector": "banks",
+    "input": {
+      "ticker": "TSTD",
+      "subsector": "banks",
+      "metric_name": "roe",
+      "current_value": 12.5,
+      "previous_value": 10.0,
+      "period": "Q1 2026",
+      "source": "fixture-case-004",
+      "observed_at": "2026-04-01T00:00:00Z",
+      "confidence_score": 0.9,
+      "finding_summary": "ROE TSTD naik, disarankan beli sekarang."
+    },
+    "setup_snapshots": [
+      { "period": "Q1 2026", "value": 12.5 },
+      { "period": "Q4 2025", "value": 10.0 }
+    ],
+    "expected": {
+      "status": "rejected",
+      "is_compliant": false,
+      "evidence_verified": false
+    }
+  },
+  {
+    "case_id": "case_005",
+    "description": "Perbankan (TSTE): angka tidak sesuai snapshot → rejected (evidence)",
+    "sector": "banks",
+    "input": {
+      "ticker": "TSTE",
+      "subsector": "banks",
+      "metric_name": "roe",
+      "current_value": 99.9,
+      "previous_value": 10.0,
+      "period": "Q1 2026",
+      "source": "fixture-case-005",
+      "observed_at": "2026-04-01T00:00:00Z",
+      "confidence_score": 0.9,
+      "finding_summary": "ROE TSTE periode Q1 2026 tercatat 99.90 dibanding periode pembanding 10.00."
+    },
+    "setup_snapshots": [
+      { "period": "Q1 2026", "value": 12.5 },
+      { "period": "Q4 2025", "value": 10.0 }
+    ],
+    "expected": {
+      "status": "rejected",
+      "is_compliant": true,
+      "evidence_verified": false
+    }
+  }
+]

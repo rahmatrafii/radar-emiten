@@ -1,18 +1,32 @@
 // src/sectors/client.rs — Sectors API v2 Client (inti)
+//
+// Endpoint mengikuti dokumentasi resmi (terverifikasi live 7 Okt 2026):
+// - `GET /v2/subsectors/` — daftar sector/subsector slug (1 kredit).
+// - `GET /v2/companies/` — Companies Screener, query `where`/`order_by`
+//   (1 kredit per structured query; param `fields` TIDAK didukung API).
+// - `GET /v2/companies/quarterly-financial-dates/` — feed tanggal laporan
+//   kuartalan universe, param `since`/`limit` (1 kredit per halaman).
+// - `GET /v2/financials/quarterly/{symbol}/` — keuangan kuartalan per emiten,
+//   param `n_quarters` (1 kredit per quarter). Simbol menerima `BBCA` maupun
+//   `BBCA.JK`; respons memakai suffix `.JK`.
+// - `GET /v2/subsector/report/{sub}/` — laporan agregat subsektor,
+//   param `sections` (1 kredit per section; default semua = 6 kredit).
+//
+// Referensi: https://docs.sectors.app/api-references/v2/indonesia/
 
 use std::sync::Arc;
 
 use reqwest::{Client, StatusCode};
 use tracing::{debug, info, instrument, warn};
 
-use crate::findings::{Finding, TingkatKeyakinan};
+use crate::findings::{ConfidenceLevel, Finding};
 use crate::sectors::{
     cache::MemCache,
     credits::{cost, CreditTracker},
     error::{Result, SectorsError},
     models::{
-        quarterly::{QuarterlyReport, QuarterlyReportResponse},
-        screener::{ScreenerQuery, ScreenerResponse, ScreenerRow},
+        quarterly::{QuarterlyDateRow, QuarterlyDatesResponse, QuarterlyFinancials},
+        screener::{ScreenerResponse, ScreenerRow, SubsectorItem},
     },
 };
 
@@ -22,6 +36,19 @@ const BASE_URL: &str = "https://api.sectors.app/v2";
 /// Environment variable yang menyimpan API key.
 /// **JANGAN pernah hardcode API key di source code.**
 const API_KEY_ENV: &str = "SECTORS_API_KEY";
+
+/// Normalisasi simbol API menjadi ticker 4 huruf untuk kontrak internal.
+///
+/// API mengembalikan `"BBCA.JK"`; kontrak internal (orchestrator) validasi
+/// `^[A-Z]{4}$`, sehingga suffix `.JK` harus dibuang:
+/// `"BBCA.JK"` → `"BBCA"`, `"bbca"` → `"BBCA"`.
+pub fn normalize_ticker(symbol: &str) -> String {
+    let upper = symbol.trim().to_uppercase();
+    upper
+        .strip_suffix(".JK")
+        .map(|s| s.to_string())
+        .unwrap_or(upper)
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -43,7 +70,7 @@ pub struct SectorsConfig {
 impl Default for SectorsConfig {
     fn default() -> Self {
         Self {
-            credit_budget: 5_000,
+            credit_budget: 1_000,
             cache_enabled: true,
             timeout_secs: 30,
         }
@@ -65,8 +92,8 @@ impl Default for SectorsConfig {
 /// #[tokio::main]
 /// async fn main() -> anyhow::Result<()> {
 ///     let client = SectorsClient::from_env()?;
-///     let reports = client.fetch_quarterly_reports("2024-07-01").await?;
-///     println!("{} laporan ditemukan", reports.len());
+///     let dates = client.fetch_latest_quarterly_dates(Some("2026-01-01"), 5).await?;
+///     println!("{} emiten terpantau", dates.len());
 ///     Ok(())
 /// }
 /// ```
@@ -80,11 +107,17 @@ pub struct SectorsClient {
     /// Credit tracker thread-safe.
     pub credits: Arc<CreditTracker>,
 
-    /// Cache laporan kuartalan (key: since_date).
-    quarterly_cache: Arc<MemCache<Vec<QuarterlyReport>>>,
+    /// Cache daftar subsektor (key tetap).
+    subsectors_cache: Arc<MemCache<Vec<SubsectorItem>>>,
 
-    /// Cache screener per ticker (key: ticker).
-    screener_cache: Arc<MemCache<ScreenerRow>>,
+    /// Cache screener per filter (key: where-clause).
+    screener_cache: Arc<MemCache<Vec<ScreenerRow>>>,
+
+    /// Cache feed tanggal kuartalan (key: since+limit).
+    quarterly_dates_cache: Arc<MemCache<Vec<QuarterlyDateRow>>>,
+
+    /// Cache financials per ticker (key: ticker+n_quarters).
+    financials_cache: Arc<MemCache<Vec<QuarterlyFinancials>>>,
 
     /// Konfigurasi client.
     config: SectorsConfig,
@@ -109,8 +142,10 @@ impl SectorsClient {
             http,
             api_key: Arc::new(api_key),
             credits: CreditTracker::new(config.credit_budget),
-            quarterly_cache: Arc::new(MemCache::with_24h_ttl()),
+            subsectors_cache: Arc::new(MemCache::with_24h_ttl()),
             screener_cache: Arc::new(MemCache::with_24h_ttl()),
+            quarterly_dates_cache: Arc::new(MemCache::with_24h_ttl()),
+            financials_cache: Arc::new(MemCache::with_24h_ttl()),
             config,
         })
     }
@@ -153,6 +188,8 @@ impl SectorsClient {
     /// Mengirim GET request ke Sectors API v2 dengan autentikasi.
     ///
     /// Secara otomatis menangani HTTP 410 (endpoint v1 gone).
+    /// Catatan billing resmi: respons 404 ikut menagih 1 kredit di sisi
+    /// server; client hanya mencatat kredit untuk respons 2xx.
     #[instrument(skip(self, params), fields(endpoint = %endpoint))]
     async fn get<T>(&self, endpoint: &str, params: &[(&str, &str)]) -> Result<T>
     where
@@ -165,8 +202,6 @@ impl SectorsClient {
             .http
             .get(&url)
             .header("Authorization", self.api_key.as_str())
-            // Sectors API v2 juga mendukung header ini:
-            .header("X-Api-Key", self.api_key.as_str())
             .query(params)
             .send()
             .await?;
@@ -197,191 +232,278 @@ impl SectorsClient {
         }
     }
 
+    /// Helper budget-check agar pesan error konsisten.
+    fn check_budget(&self, amount: u64, label: &str) -> Result<()> {
+        if self.credits.can_afford(amount) {
+            return Ok(());
+        }
+        warn!("Kredit tidak mencukupi untuk {label}");
+        Err(SectorsError::Other(anyhow::anyhow!(
+            "Kredit API habis. {}",
+            self.credits.summary()
+        )))
+    }
+
     // -----------------------------------------------------------------------
     // Fungsi pengambilan data utama
     // -----------------------------------------------------------------------
 
-    /// Mengambil daftar laporan kuartalan terbaru sejak tanggal tertentu.
+    /// Mengambil daftar sector/subsector slug resmi.
     ///
-    /// Endpoint: `GET /v2/companies/reports/quarterly?since=YYYY-MM-DD`
-    ///
-    /// # Arguments
-    /// * `since_date` — Tanggal awal filter, format `"YYYY-MM-DD"`.
+    /// Endpoint: `GET /v2/subsectors/` → JSON array `[{sector, subsector}]`.
     ///
     /// # Credit Cost
-    /// Dikenakan [`cost::QUARTERLY_REPORTS`] kredit per panggilan.
+    /// Dikenakan [`cost::SUBSECTORS`] kredit per panggilan.
     ///
     /// # Cache
-    /// Hasil dicache 24 jam dengan key = `since_date`.
-    #[instrument(skip(self), fields(since = %since_date))]
-    pub async fn fetch_quarterly_reports(
-        &self,
-        since_date: &str,
-    ) -> Result<Vec<QuarterlyReport>> {
-        // Cek cache terlebih dahulu
+    /// Hasil dicache 24 jam (daftar ini jarang berubah).
+    pub async fn fetch_subsectors(&self) -> Result<Vec<SubsectorItem>> {
+        const KEY: &str = "all";
+
         if self.config.cache_enabled {
-            if let Some(cached) = self.quarterly_cache.get(since_date) {
-                info!(since = %since_date, "Quarterly reports dari cache");
+            if let Some(cached) = self.subsectors_cache.get(KEY) {
+                info!("Subsectors dari cache");
                 return Ok(cached);
             }
         }
 
-        // Cek budget kredit
-        if !self.credits.can_afford(cost::QUARTERLY_REPORTS) {
-            warn!("Kredit tidak mencukupi untuk quarterly reports");
-            return Err(SectorsError::Other(anyhow::anyhow!(
-                "Kredit API habis. {}",
-                self.credits.summary()
-            )));
+        self.check_budget(cost::SUBSECTORS, "subsectors")?;
+        info!("Mengambil subsectors dari API");
+
+        let items: Vec<SubsectorItem> = self.get("subsectors/", &[]).await?;
+
+        self.credits.charge(cost::SUBSECTORS);
+        info!(jumlah = items.len(), "{}", self.credits.summary());
+
+        if self.config.cache_enabled {
+            self.subsectors_cache.set(KEY, items.clone());
         }
 
-        info!(since = %since_date, "Mengambil quarterly reports dari API");
+        Ok(items)
+    }
 
-        let response: QuarterlyReportResponse = self
-            .get(
-                "companies/reports/quarterly",
-                &[("since", since_date)],
-            )
-            .await?;
+    /// Menyaring emiten via Companies Screener.
+    ///
+    /// Endpoint: `GET /v2/companies/` dengan param `where` (SQL-like).
+    /// Contoh filter subsektor: `"sub_sector = 'banks'"` (slug kebab-case dari
+    /// [`fetch_subsectors`]).
+    ///
+    /// # Arguments
+    /// * `subsector` — Slug subsektor (contoh: `"banks"`). `None` = tanpa filter.
+    /// * `limit` — Jumlah hasil (API default 50).
+    ///
+    /// # Credit Cost
+    /// Dikenakan [`cost::SCREENER_STRUCTURED`] kredit per panggilan.
+    ///
+    /// # Cache
+    /// Hasil per filter dicache 24 jam.
+    #[instrument(skip(self), fields(subsector = ?subsector))]
+    pub async fn screen_companies(
+        &self,
+        subsector: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<ScreenerRow>> {
+        let where_clause;
+        let cache_key = format!("{}:{limit}", subsector.unwrap_or("-"));
 
-        self.credits.charge(cost::QUARTERLY_REPORTS);
+        if self.config.cache_enabled {
+            if let Some(cached) = self.screener_cache.get(&cache_key) {
+                info!("Screener dari cache");
+                return Ok(cached);
+            }
+        }
+
+        self.check_budget(cost::SCREENER_STRUCTURED, "screener")?;
+
+        let limit_str = limit.to_string();
+        let mut params: Vec<(&str, &str)> = vec![("limit", &limit_str)];
+        if let Some(sub) = subsector {
+            // Slug dikutip sesuai sintaks resmi: sub_sector = 'banks'
+            where_clause = format!("sub_sector = '{sub}'");
+            params.push(("where", &where_clause));
+        }
+
+        info!(?subsector, limit, "Menyaring emiten via screener");
+
+        let response: ScreenerResponse = self.get("companies/", &params).await?;
+
+        self.credits.charge(cost::SCREENER_STRUCTURED);
         info!(
-            jumlah = response.data.len(),
+            jumlah = response.results.len(),
             "{}",
             self.credits.summary()
         );
 
-        // Simpan ke cache
         if self.config.cache_enabled {
-            self.quarterly_cache.set(since_date, response.data.clone());
+            self.screener_cache
+                .set(&cache_key, response.results.clone());
         }
 
-        Ok(response.data)
+        Ok(response.results)
     }
 
-    /// Mengambil metrik keuangan kuartalan untuk satu ticker via Companies Screener v2.
+    /// Mengambil feed tanggal laporan kuartalan terbaru untuk semua emiten.
     ///
-    /// Endpoint: `GET /v2/companies/screener/?fields=...&where=symbol%3D%3DTICKER`
-    ///
-    /// # Arguments
-    /// * `ticker` — Kode saham BEI (contoh: `"BBCA"`).
-    /// * `fields` — Daftar field kuartalan yang diinginkan (contoh: `["net_interest_margin_q"]`).
+    /// Endpoint: `GET /v2/companies/quarterly-financial-dates/` dengan param
+    /// `since=YYYY-MM-DD` (hanya emiten yang lapor sejak tanggal itu) dan
+    /// `limit` (maks 30 per halaman; feed penuh ~950 emiten).
     ///
     /// # Credit Cost
-    /// Dikenakan [`cost::SCREENER_PER_TICKER`] kredit per ticker.
+    /// Dikenakan [`cost::QUARTERLY_DATES_PAGE`] kredit per halaman.
     ///
     /// # Cache
-    /// Hasil per ticker dicache 24 jam.
-    #[instrument(skip(self, fields), fields(ticker = %ticker))]
-    pub async fn fetch_financial_metrics(
+    /// Hasil per kombinasi since+limit dicache 24 jam.
+    #[instrument(skip(self), fields(since = ?since_date))]
+    pub async fn fetch_latest_quarterly_dates(
         &self,
-        ticker: &str,
-        fields: Vec<&str>,
-    ) -> Result<ScreenerRow> {
-        // Key cache mencakup ticker + fields agar field berbeda tidak saling override
-        let cache_key = format!("{}:{}", ticker, fields.join(","));
+        since_date: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<QuarterlyDateRow>> {
+        let limit = limit.clamp(1, 30);
+        let cache_key = format!("{}:{limit}", since_date.unwrap_or("-"));
 
         if self.config.cache_enabled {
-            if let Some(cached) = self.screener_cache.get(&cache_key) {
-                info!(ticker = %ticker, "Screener metrics dari cache");
+            if let Some(cached) = self.quarterly_dates_cache.get(&cache_key) {
+                info!("Quarterly dates dari cache");
                 return Ok(cached);
             }
         }
 
-        if !self.credits.can_afford(cost::SCREENER_PER_TICKER) {
-            warn!(ticker = %ticker, "Kredit tidak mencukupi untuk screener");
+        self.check_budget(cost::QUARTERLY_DATES_PAGE, "quarterly dates")?;
+        info!("Mengambil quarterly dates dari API");
+
+        let limit_str = limit.to_string();
+        let mut params: Vec<(&str, &str)> = vec![("limit", &limit_str)];
+        if let Some(since) = since_date {
+            params.push(("since", since));
+        }
+
+        let response: QuarterlyDatesResponse = self
+            .get("companies/quarterly-financial-dates/", &params)
+            .await?;
+
+        self.credits.charge(cost::QUARTERLY_DATES_PAGE);
+        info!(
+            jumlah = response.results.len(),
+            "{}",
+            self.credits.summary()
+        );
+
+        if self.config.cache_enabled {
+            self.quarterly_dates_cache
+                .set(&cache_key, response.results.clone());
+        }
+
+        Ok(response.results)
+    }
+
+    /// Mengambil laporan agregat satu subsektor.
+    ///
+    /// Endpoint: `GET /v2/subsector/report/{sub}/` dengan param `sections`
+    /// (comma-separated). Default API (tanpa `sections`) = 6 section = 6 kredit,
+    /// sehingga method ini mewajibkan daftar section eksplisit.
+    ///
+    /// Section valid: `statistics`, `market_cap`, `stability`, `valuation`,
+    /// `growth`, `companies`.
+    ///
+    /// Respons dikembalikan mentah (`serde_json::Value`) karena bentuknya
+    /// mengikuti section yang diminta.
+    ///
+    /// # Credit Cost
+    /// Dikenakan [`cost::SUBSECTOR_REPORT_PER_SECTION`] kredit per section.
+    pub async fn fetch_subsector_report(
+        &self,
+        subsector: &str,
+        sections: &[&str],
+    ) -> Result<serde_json::Value> {
+        if sections.is_empty() {
             return Err(SectorsError::Other(anyhow::anyhow!(
-                "Kredit API habis. {}",
-                self.credits.summary()
+                "sections tidak boleh kosong (default API menagih 6 kredit)"
             )));
         }
 
-        info!(ticker = %ticker, ?fields, "Mengambil financial metrics dari screener");
+        let cost = cost::SUBSECTOR_REPORT_PER_SECTION * sections.len() as u64;
+        self.check_budget(cost, "subsector report")?;
 
-        // Bangun field list — selalu sertakan symbol agar bisa diidentifikasi
-        let mut all_fields = vec!["symbol", "company_name"];
-        all_fields.extend_from_slice(&fields);
-        let fields_str = all_fields.join(",");
+        let sections_str = sections.join(",");
+        let endpoint = format!("subsector/report/{subsector}/");
 
-        // Filter where clause: symbol==TICKER
-        let where_clause = format!("symbol=={ticker}");
+        info!(subsector = %subsector, sections = %sections_str, "Mengambil subsector report");
 
-        let params: &[(&str, &str)] = &[
-            ("fields", &fields_str),
-            ("where", &where_clause),
-        ];
+        let report: serde_json::Value = self
+            .get(&endpoint, &[("sections", &sections_str)])
+            .await?;
 
-        let response: ScreenerResponse = self.get("companies/screener/", params).await?;
+        self.credits.charge(cost);
 
-        self.credits.charge(cost::SCREENER_PER_TICKER);
-
-        // Ambil baris pertama (seharusnya hanya satu untuk filter ticker spesifik)
-        let row = response
-            .data
-            .into_iter()
-            .next()
-            .ok_or_else(|| SectorsError::FieldNotFound {
-                ticker: ticker.to_string(),
-                field: "all".to_string(),
-            })?;
-
-        if self.config.cache_enabled {
-            self.screener_cache.set(&cache_key, row.clone());
-        }
-
-        Ok(row)
+        Ok(report)
     }
 
-    /// Mengambil metrics untuk banyak ticker sekaligus secara konkuren.
+    /// Mengambil keuangan kuartalan N periode terakhir untuk satu ticker.
     ///
-    /// Memanggil [`fetch_financial_metrics`] secara parallel untuk semua ticker.
-    /// Ticker yang gagal akan menghasilkan error log tapi tidak menghentikan ticker lain.
-    pub async fn fetch_metrics_batch(
+    /// Endpoint: `GET /v2/financials/quarterly/{ticker}/` dengan param
+    /// `n_quarters`. Respons adalah JSON array (terbaru dulu).
+    /// Ticker menerima `"BBCA"` maupun `"BBCA.JK"`.
+    ///
+    /// # Credit Cost
+    /// Dikenakan [`cost::FINANCIALS_PER_QUARTER`] kredit per quarter
+    /// yang dikembalikan.
+    ///
+    /// # Cache
+    /// Hasil per ticker+n_quarters dicache 24 jam.
+    #[instrument(skip(self), fields(ticker = %ticker))]
+    pub async fn fetch_quarterly_financials(
         &self,
-        tickers: Vec<&str>,
-        fields: Vec<&str>,
-    ) -> Vec<Result<ScreenerRow>> {
-        let client = Arc::new(self as *const SectorsClient);
-        let mut handles = Vec::new();
+        ticker: &str,
+        n_quarters: u32,
+    ) -> Result<Vec<QuarterlyFinancials>> {
+        let n_quarters = n_quarters.clamp(1, 12);
+        let cache_key = format!("{}:{n_quarters}", ticker.to_uppercase());
 
-        for ticker in &tickers {
-            let ticker = ticker.to_string();
-            let fields: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
-
-            // Spawn concurrent tasks
-            let http = self.http.clone();
-            let api_key = Arc::clone(&self.api_key);
-            let credits = Arc::clone(&self.credits);
-            let screener_cache = Arc::clone(&self.screener_cache);
-            let config = self.config.clone();
-
-            handles.push(tokio::spawn({
-                let ticker = ticker.clone();
-                let fields_ref: Vec<&'static str> = Vec::new(); // placeholder
-                async move {
-                    // Buat client lightweight untuk task ini
-                    let mini_client = SectorsClient {
-                        http,
-                        api_key,
-                        credits,
-                        quarterly_cache: Arc::new(MemCache::with_24h_ttl()),
-                        screener_cache,
-                        config,
-                    };
-                    let field_refs: Vec<&str> = fields.iter().map(|s| s.as_str()).collect();
-                    mini_client.fetch_financial_metrics(&ticker, field_refs).await
-                }
-            }));
+        if self.config.cache_enabled {
+            if let Some(cached) = self.financials_cache.get(&cache_key) {
+                info!(ticker = %ticker, "Quarterly financials dari cache");
+                return Ok(cached);
+            }
         }
 
-        let mut results = Vec::new();
-        for handle in handles {
-            match handle.await {
-                Ok(result) => results.push(result),
-                Err(join_err) => results.push(Err(SectorsError::Other(anyhow::anyhow!(
-                    "Task join error: {join_err}"
-                )))),
-            }
+        // Budget dicek konservatif untuk n_quarters penuh.
+        self.check_budget(
+            cost::FINANCIALS_PER_QUARTER * n_quarters as u64,
+            "quarterly financials",
+        )?;
+
+        let n_str = n_quarters.to_string();
+        let endpoint = format!("financials/quarterly/{}/", ticker.trim().to_uppercase());
+
+        info!(ticker = %ticker, n_quarters, "Mengambil quarterly financials");
+
+        let records: Vec<QuarterlyFinancials> =
+            self.get(&endpoint, &[("n_quarters", &n_str)]).await?;
+
+        // Tagih sesuai jumlah quarter yang benar-benar dikembalikan.
+        let billed = cost::FINANCIALS_PER_QUARTER * records.len().max(1) as u64;
+        self.credits.charge(billed);
+
+        if self.config.cache_enabled {
+            self.financials_cache.set(&cache_key, records.clone());
+        }
+
+        Ok(records)
+    }
+
+    /// Mengambil financials untuk banyak ticker sekaligus (sekuensial).
+    ///
+    /// Biaya = jumlah ticker × [`cost::FINANCIALS_PER_QUARTER`] × `n_quarters`.
+    /// Ticker yang gagal tidak menghentikan ticker lain (hasil `Err` per ticker).
+    pub async fn fetch_financials_batch(
+        &self,
+        tickers: &[&str],
+        n_quarters: u32,
+    ) -> Vec<Result<Vec<QuarterlyFinancials>>> {
+        let mut results = Vec::with_capacity(tickers.len());
+        for ticker in tickers {
+            results.push(self.fetch_quarterly_financials(ticker, n_quarters).await);
         }
         results
     }
@@ -390,52 +512,49 @@ impl SectorsClient {
     // Konversi ke Finding
     // -----------------------------------------------------------------------
 
-    /// Mengkonversi `ScreenerRow` menjadi `Vec<Finding>` untuk field yang diminta.
+    /// Mengkonversi 2 record kuartalan terbaru menjadi `Vec<Finding>`.
     ///
-    /// Setiap field menghasilkan satu Finding jika ada data `_prev` (nilai sebelumnya).
-    /// Konvensi penamaan field:
-    /// - `"net_interest_margin_q"` → nilai sekarang
-    /// - `"net_interest_margin_q_prev"` → nilai kuartal sebelumnya (jika tersedia di API)
-    pub fn row_to_findings(
+    /// Membandingkan record terbaru (`records[0]`) dengan periode pembanding
+    /// (`records[1]`). Setiap field yang ada di kedua record menghasilkan satu
+    /// `Finding`. Periode memakai tanggal laporan API (`YYYY-MM-DD`) apa adanya
+    /// — tanpa ditebak menjadi label kuartal.
+    ///
+    /// Ticker dinormalisasi via [`normalize_ticker`] (`"BBCA.JK"` → `"BBCA"`)
+    /// agar lolos validasi kontrak `^[A-Z]{4}$`.
+    pub fn financials_to_findings(
         &self,
-        row: &ScreenerRow,
+        records: &[QuarterlyFinancials],
         fields: &[&str],
-        periode: &str,
+        source: &str,
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
+        let (current, previous) = match records {
+            [c, p, ..] => (c, p),
+            _ => {
+                debug!("Butuh minimal 2 record kuartalan untuk perbandingan");
+                return findings;
+            }
+        };
+
+        let period = current.date.clone().unwrap_or_default();
+
         for &field in fields {
-            let nilai_sekarang = match row.get_f64(field) {
-                Some(v) => v,
-                None => {
-                    debug!(
-                        ticker = %row.symbol,
-                        field = %field,
-                        "Field tidak tersedia, skip"
-                    );
-                    continue;
-                }
-            };
-
-            // Cari nilai sebelumnya: konvensi _prev suffix
-            let prev_field = format!("{field}_prev");
-            let nilai_sebelum = row.get_f64(&prev_field).unwrap_or(0.0);
-
-            // Tentukan tingkat keyakinan berdasarkan ketersediaan data
-            let tingkat_keyakinan = if row.get_f64(&prev_field).is_some() {
-                TingkatKeyakinan::Tinggi
-            } else {
-                TingkatKeyakinan::Sedang // Data saat ini ada, tapi data prev tidak ada
+            let (Some(nilai_sekarang), Some(nilai_sebelum)) =
+                (current.metric(field), previous.metric(field))
+            else {
+                debug!(field = %field, "Field tidak tersedia di kedua periode, skip");
+                continue;
             };
 
             findings.push(Finding::new(
-                row.symbol.clone(),
+                current.ticker_short(),
                 field,
                 nilai_sebelum,
                 nilai_sekarang,
-                periode,
-                "sectors_api_v2/screener",
-                tingkat_keyakinan,
+                period.clone(),
+                source,
+                ConfidenceLevel::High,
             ));
         }
 
@@ -448,17 +567,21 @@ impl SectorsClient {
 
     /// Membersihkan entri cache yang sudah kadaluarsa.
     pub fn evict_cache(&self) {
-        self.quarterly_cache.evict_expired();
+        self.subsectors_cache.evict_expired();
         self.screener_cache.evict_expired();
+        self.quarterly_dates_cache.evict_expired();
+        self.financials_cache.evict_expired();
     }
 
     /// Ringkasan status client.
     pub fn status(&self) -> String {
         format!(
-            "SectorsClient | {} | quarterly_cache={} entries | screener_cache={} entries",
+            "SectorsClient | {} | subsectors={} screener={} dates={} financials={} entries",
             self.credits.summary(),
-            self.quarterly_cache.len(),
+            self.subsectors_cache.len(),
             self.screener_cache.len(),
+            self.quarterly_dates_cache.len(),
+            self.financials_cache.len(),
         )
     }
 }
@@ -469,8 +592,13 @@ impl std::fmt::Debug for SectorsClient {
         f.debug_struct("SectorsClient")
             .field("api_key", &"[REDACTED]")
             .field("credits_used", &self.credits.used())
-            .field("quarterly_cache_len", &self.quarterly_cache.len())
+            .field("subsectors_cache_len", &self.subsectors_cache.len())
             .field("screener_cache_len", &self.screener_cache.len())
+            .field(
+                "quarterly_dates_cache_len",
+                &self.quarterly_dates_cache.len(),
+            )
+            .field("financials_cache_len", &self.financials_cache.len())
             .finish()
     }
 }

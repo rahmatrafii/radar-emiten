@@ -1,9 +1,9 @@
-# IDX Sentinel / Financial Market Research Agent
-## Runbook Eksekusi Lengkap untuk Agent Coding — Bagian Rahmat Rafi
+﻿# IDX Sentinel / Financial Market Research Agent
+## Runbook Eksekusi Lengkap untuk Agent Coding — Bagian Rafi
 
 **Versi dokumen:** 1.0  
 **Tanggal penyusunan:** 4 Oktober 2026  
-**Pemilik bagian:** Rahmat Rafi  
+**Pemilik bagian:** Rafi  
 **Bahasa/backend:** Rust + Axum + Tokio  
 **Database:** PostgreSQL + SQLx  
 **Port backend:** `8080`  
@@ -21,7 +21,7 @@ Kamu bertindak sebagai **coding agent yang mengeksekusi pekerjaan**, bukan hanya
 2. Baca `ARCHITECTURE.md`, `CONTRACTS.md`, `TASKS.md`, `README.md`, file konfigurasi, kode, migration, serta `docs/PROMPTS.md` jika tersedia.
 3. Jangan menimpa implementasi yang sudah ada tanpa memeriksanya. Pertahankan perubahan pengguna dan perubahan anggota tim lain.
 4. Kerjakan satu fase pada satu waktu. Setelah setiap fase, jalankan pemeriksaan yang relevan dan perbaiki kegagalan sebelum lanjut.
-5. Implementasikan backend Rafi. Jangan mengambil alih implementasi MCP/Sectors milik **Representative** atau prompt master/compliance engine milik **Dian**, kecuali diperlukan adapter integrasi kecil yang sudah disepakati.
+5. Implementasikan backend Rafi. Jangan mengambil alih implementasi MCP/Sectors milik **Rafiq** atau prompt master/compliance engine milik **Dian**, kecuali diperlukan adapter integrasi kecil yang sudah disepakati.
 6. Bila komponen anggota lain belum ada, buat **trait/interface dan mock adapter** agar bagian Rafi tetap dapat diuji. Jangan mengarang endpoint transport MCP, field Sectors, biaya kredit, atau indikator yang belum dikonfirmasi.
 7. Jika ditemukan konflik spesifikasi, ikuti aturan prioritas pada Bagian 1. Catat konflik yang belum dapat diselesaikan di `docs/integration-decisions.md`; jangan menyembunyikannya.
 8. Setelah tiap fase, laporkan: file yang dibuat/diubah, command yang dijalankan, hasil tes, dan blocker yang sebenarnya. Jangan melaporkan tes berhasil jika command gagal atau tidak dijalankan.
@@ -86,7 +86,7 @@ Jika kode lama masih memakai kontrak lama, buat adapter internal yang eksplisit.
 
 `TASKS.md` secara khusus menyebut tabel inti `snapshots`, `findings`, dan `compliance_audit_logs`. Untuk mendukung perilaku produk sebelumnya, buat juga tabel operasional yang dibutuhkan, misalnya pengguna, tesis, indikator tesis, pesan masuk, alerts, kredit, dan jejak agent. Jangan menghapus tiga tabel inti tersebut.
 
-**Axum backend milik Rafi adalah satu-satunya pemilik koneksi dan query PostgreSQL.** MCP server milik Representative tidak boleh membuat koneksi database kedua yang menulis ke tabel yang sama. Bila MCP tools `get_previous_snapshot` dan `record_finding` membutuhkan database, implementasi tool tersebut harus mendelegasikan operasi ke endpoint internal Axum yang diamankan, atau koordinasikan perubahan arsitektur dengan tim.
+**Axum backend milik Rafi adalah satu-satunya pemilik koneksi dan query PostgreSQL.** MCP server milik Rafiq tidak boleh membuat koneksi database kedua yang menulis ke tabel yang sama. Bila MCP tools `get_previous_snapshot` dan `record_finding` membutuhkan database, implementasi tool tersebut harus mendelegasikan operasi ke endpoint internal Axum yang diamankan, atau koordinasikan perubahan arsitektur dengan tim.
 
 ### 1.3 Port dan struktur aplikasi
 
@@ -120,11 +120,11 @@ Jangan diam-diam mengubah kontrak, dan jangan mengklaim seluruh aturan kata terl
 - M-04: WhatsApp Cloud API client, format payload, pengiriman pesan, webhook verification, webhook message parsing, signature validation, serta deduplikasi pesan.
 - Workflow tesis WhatsApp dan konfirmasi pengguna.
 - Tiga status tesis (Menguat, Netral, Melemah), kartu bukti, daftar perintah WhatsApp, cooldown/batas alert, pencatatan kredit, audit trail/jejak agent, serta API JSON dashboard.
-- Integrasi dengan kontrak MCP Representative dan prompt/compliance Dian tanpa mengambil alih ownership mereka.
+- Integrasi dengan kontrak MCP Rafiq dan prompt/compliance Dian tanpa mengambil alih ownership mereka.
 
 ## Yang bukan tugas utama Rafi
 
-- Mengimplementasikan Sectors API client, caching, rate limiter, atau MCP server `rmcp` dari nol. Itu tanggung jawab Representative.
+- Mengimplementasikan Sectors API client, caching, rate limiter, atau MCP server `rmcp` dari nol. Itu tanggung jawab Rafiq.
 - Menulis ulang master prompt empat agent yang dikerjakan Dian. Rafi mengintegrasikan prompt dan memvalidasi outputnya.
 - Membuat dashboard frontend penuh bila dashboard telah dialokasikan ke Dian/anggota lain. Bagian Rafi menyediakan API JSON dan memastikan nomor pengguna disamarkan.
 - Menyediakan nasihat keuangan, rekomendasi transaksi, target harga, atau eksekusi transaksi.
@@ -206,7 +206,7 @@ Perintah `git status` dan daftar file harus diperiksa sebelum file diubah. Sesua
 
 1. Temukan crate Rust yang sudah ada. Jika sudah ada `orchestrator/`, `backend/`, atau folder backend, **gunakan crate itu**; jangan membuat backend kedua.
 2. Baca `Cargo.toml`, `src/main.rs`, router Axum yang sudah ada, konfigurasi environment, migration, tests, `.gitignore`, `docker-compose.yml`, README, `ARCHITECTURE.md`, `CONTRACTS.md`, `TASKS.md`, dan `docs/PROMPTS.md` jika ada.
-3. Periksa apakah Representative sudah menyediakan MCP server/binary dan transport yang disepakati.
+3. Periksa apakah Rafiq sudah menyediakan MCP server/binary dan transport yang disepakati.
 4. Periksa apakah Dian sudah menyediakan prompt, JSON schema, compliance output, dan fixture.
 5. Buat atau perbarui `docs/integration-decisions.md`. Catat setidaknya konflik disclaimer, transport MCP, daftar metric final, dan status prompt. Pisahkan fakta terkonfirmasi dari hal yang belum dipastikan.
 6. Catat command baseline yang bisa dijalankan (`cargo check`, `cargo test`, atau kegagalan baseline). Jangan menganggap kegagalan lama disebabkan perubahan baru.
@@ -341,7 +341,7 @@ Catatan:
 
 - `APP_MODE=mock` harus memungkinkan unit/integration tests tanpa memerlukan token eksternal. Untuk `APP_MODE=real`, validasi konfigurasi integrasi saat startup atau ketika integrasi pertama kali dipakai.
 - `GEMINI_MODEL` dan `WHATSAPP_GRAPH_API_VERSION` diisi berdasarkan konfigurasi layanan dan keputusan tim; jangan menebak versi API yang belum diverifikasi.
-- API key Sectors tetap dikelola Representative. Jangan menambahkan key Sectors ke `.env` Rafi jika arsitektur tim tidak memerlukannya.
+- API key Sectors tetap dikelola Rafiq. Jangan menambahkan key Sectors ke `.env` Rafi jika arsitektur tim tidak memerlukannya.
 - `POLICY_DISCLAIMER_CONFLICT_ACKNOWLEDGED` bukan pengganti keputusan tim. Default harus tetap `false` sampai konflik di Bagian 1.6 diselesaikan secara eksplisit.
 
 Pastikan `.gitignore` memuat sekurang-kurangnya:
@@ -564,7 +564,7 @@ Gunakan tabel relasi untuk menghubungkan satu Finding pasar dengan tesis penggun
 - `call_reference TEXT`
 - `recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()`
 
-Biaya aktual dikirim oleh Representative berdasarkan pengukuran akun Sectors. Jangan mengarang biaya endpoint di kode backend.
+Biaya aktual dikirim oleh Rafiq berdasarkan pengukuran akun Sectors. Jangan mengarang biaya endpoint di kode backend.
 
 ### `agent_traces`
 
@@ -605,7 +605,7 @@ Tujuan: memeriksa proses dan koneksi database.
 
 ### `POST /snapshots`
 
-Menerima snapshot hasil dari MCP/Representative atau adapter ingestion.
+Menerima snapshot hasil dari MCP/Rafiq atau adapter ingestion.
 
 Contoh body internal:
 
@@ -662,7 +662,7 @@ Menyimpan langkah agent secara terstruktur, misalnya agent `Scout`, action `evid
 
 ### `POST /kredit`
 
-Menyimpan pemakaian kredit yang dilaporkan Representative: endpoint, credits, from_cache, dan reference bila ada. Endpoint ini tidak boleh menerima token/key.
+Menyimpan pemakaian kredit yang dilaporkan Rafiq: endpoint, credits, from_cache, dan reference bila ada. Endpoint ini tidak boleh menerima token/key.
 
 ## 7.2 Endpoint internal untuk integrasi MCP
 
@@ -853,9 +853,9 @@ Simpan nomor dalam satu format kanonis yang cocok dengan WhatsApp Cloud API. Sem
 
 # 11. Tahap 7 — MCP gateway dan sumber data
 
-> ✅ **STATUS: SELESAI (5 Oktober 2026)** — trait `McpGateway` (6 tools), `MockMcpGateway` (fixture + error 410/transport), `RealMcpGateway` stub jujur, `from_config`, `AppState.mcp`, 7 test PASS. Adapter real tetap blocked sampai transport MCP Representative disepakati.
+> ✅ **STATUS: SELESAI (5 Oktober 2026)** — trait `McpGateway` (6 tools), `MockMcpGateway` (fixture + error 410/transport), `RealMcpGateway` stub jujur, `from_config`, `AppState.mcp`, 7 test PASS. Adapter real tetap blocked sampai transport MCP Rafi disepakati.
 
-MCP server/Rust `rmcp` dibuat oleh Representative. Rafi membuat **MCP client/gateway adapter** untuk dipanggil oleh `AgentPipeline`.
+MCP server/Rust `rmcp` dibuat oleh Rafiq. Rafiq membuat **MCP client/gateway adapter** untuk dipanggil oleh `AgentPipeline`.
 
 ## 11.1 Enam MCP tools yang harus dikenali oleh adapter
 
@@ -873,7 +873,7 @@ Sesuai pembagian tim, jangan implementasikan Sectors HTTP client atau MCP server
 ## 11.2 Transport
 
 1. Periksa dokumentasi MCP server yang benar-benar tersedia dan pilihan transport yang disepakati (stdio/SSE/HTTP).
-2. Jika implementasi nyata sudah tersedia, pakai transport dan nama tools persis seperti kontrak Representative.
+2. Jika implementasi nyata sudah tersedia, pakai transport dan nama tools persis seperti kontrak Rafiq.
 3. Jika belum tersedia, buat trait seperti `McpGateway` dan `MockMcpGateway` untuk test pipeline. Siapkan adapter real terpisah agar dapat dilengkapi tanpa mengubah `AgentPipeline`.
 4. Jangan menebak URL, command binary, atau schema response MCP. Bila transport belum disepakati, catat blocker di `docs/integration-decisions.md` dan beri status integrasi real sebagai belum terverifikasi.
 5. Tangani MCP error sebagai tipe error terstruktur dan log ringkas tanpa secret.
@@ -888,7 +888,7 @@ Backend harus mengenali error `API_VERSION_DEPRECATED`/HTTP `410` dari MCP dan:
 - tidak menghasilkan alert dari panggilan yang gagal;
 - mengembalikan error yang mudah ditindaklanjuti.
 
-`BASE_URL` dan path Sectors v2 terutama dikelola oleh Representative. Rafi tidak menyimpan key Sectors jika bukan pemilik key.
+`BASE_URL` dan path Sectors v2 terutama dikelola oleh Rafiq. Rafiq tidak menyimpan key Sectors jika bukan pemilik key.
 
 ## 11.4 Snapshot cold-start
 
@@ -899,7 +899,7 @@ Pipeline membutuhkan dua observasi yang benar-benar dapat dibandingkan. Bila sna
 - jangan mengeluarkan perubahan palsu dari nilai sebelumnya yang tidak ada;
 - baru buat Finding perubahan setelah current dan previous tersedia.
 
-**Selesai jika:** `MockMcpGateway` menjalankan unit/integration test lengkap, dan adapter real dapat diuji saat Representative menyediakan transport dan binary.
+**Selesai jika:** `MockMcpGateway` menjalankan unit/integration test lengkap, dan adapter real dapat diuji saat Rafiq menyediakan transport dan binary.
 
 ---
 
@@ -1153,7 +1153,7 @@ Implementasikan scheduler sederhana berbasis Tokio atau scheduler crate yang sud
 
 ## 17.1 Meter kredit
 
-- Representative mengirim biaya setiap panggilan Sectors ke `POST /kredit`.
+- Rafiq mengirim biaya setiap panggilan Sectors ke `POST /kredit`.
 - Simpan endpoint, nilai kredit, `from_cache`, waktu, dan call reference bila tersedia.
 - `GET /api/kredit` menghitung `total_used` dari row database dan `remaining = max(0, configured_budget - total_used)`.
 - `SECTORS_CREDIT_BUDGET` default rencana `1000`, tetapi tampilkan sebagai budget konfigurasi, bukan mengklaim telah cocok dengan akun jika data saldo eksternal belum diverifikasi.
@@ -1303,7 +1303,7 @@ Hanya setelah credential lokal dan akun layanan tersedia:
 - kirim pesan melalui WhatsApp Cloud API dari Rust;
 - gunakan webhook publik sementara yang disetujui tim;
 - uji signature yang benar dan salah;
-- pakai MCP server nyata dari Representative;
+- pakai MCP server nyata dari Rafiq;
 - pakai Gemini model/prompt yang telah dikonfirmasi Dian;
 - simpan bukti test tanpa menampilkan secret atau nomor telepon penuh.
 
@@ -1423,7 +1423,7 @@ Urutan ini adalah prioritas eksekusi, bukan jaminan bahwa semua integrasi ekster
 - Semua WhatsApp commands yang belum lengkap.
 - Credit meter dan API dashboard read models.
 - Scheduler otomatis lengkap.
-- Adapter MCP real setelah Representative menyediakan transport/tool.
+- Adapter MCP real setelah Rafiq menyediakan transport/tool.
 - Gemini Presenter jika seluruh hard checks sudah ada.
 
 ## P2 — hanya setelah semua wajib lolos
@@ -1441,7 +1441,7 @@ Jangan memotong DB persistence, webhook deduplication, evidence gate, atau bukti
 
 - [ ] Tidak ada `.env`, API key, token, password, `WHATSAPP_APP_SECRET`, atau `INTERNAL_API_TOKEN` dalam repository atau log.
 - [ ] `.env.example` hanya berisi nama variabel dan contoh non-rahasia.
-- [ ] Sectors API key tetap dimiliki Representative, sesuai pembagian tim.
+- [ ] Sectors API key tetap dimiliki Rafiq, sesuai pembagian tim.
 - [ ] Raw webhook signature dipakai untuk validasi dan tidak dipublikasikan.
 - [ ] Nomor WhatsApp disamarkan di semua `/api/*`, screenshot, dan video.
 - [ ] Internal endpoints memerlukan token bila dapat diakses jaringan.
@@ -1516,4 +1516,4 @@ Tidak boleh menulis PASS hanya karena source code terlihat benar. PASS harus did
 
 Salin prompt berikut bersama dokumen ini:
 
-> Baca seluruh `IDX_Sentinel_Rafi_Agent_Execution_Runbook.md`, `ARCHITECTURE.md`, `CONTRACTS.md`, dan `TASKS.md` sebelum coding. Periksa repository aktual terlebih dahulu dan jangan menimpa perubahan yang sudah ada. Implementasikan seluruh tugas Rahmat Rafi secara berurutan dalam fase runbook. Kerjakan perubahan file nyata, bukan hanya memberi rencana. Gunakan `CONTRACTS.md` terbaru sebagai kontrak `Finding`, jalankan test setelah setiap fase, dan perbaiki error yang disebabkan perubahanmu. Jangan mengimplementasikan ownership Representative (MCP/Sectors server) atau Dian (master prompts/compliance engine) dari nol; buat adapter/mock jika komponen itu belum tersedia. Jangan menebak transport MCP, field Sectors, metric whitelist, atau biaya kredit. Catat konflik disclaimer dan kata terlarang sebagai blocker kepatuhan; jangan menyembunyikannya. Jangan menampilkan atau meminta secret. Di akhir, gunakan format laporan pada Bagian 24 dan bedakan dengan jujur fitur yang benar-benar dites dari integrasi yang belum terverifikasi.
+> Baca seluruh `IDX_Sentinel_Rafi_Agent_Execution_Runbook.md`, `ARCHITECTURE.md`, `CONTRACTS.md`, dan `TASKS.md` sebelum coding. Periksa repository aktual terlebih dahulu dan jangan menimpa perubahan yang sudah ada. Implementasikan seluruh tugas Rafi secara berurutan dalam fase runbook. Kerjakan perubahan file nyata, bukan hanya memberi rencana. Gunakan `CONTRACTS.md` terbaru sebagai kontrak `Finding`, jalankan test setelah setiap fase, dan perbaiki error yang disebabkan perubahanmu. Jangan mengimplementasikan ownership Rafiq (MCP/Sectors server) atau Dian (master prompts/compliance engine) dari nol; buat adapter/mock jika komponen itu belum tersedia. Jangan menebak transport MCP, field Sectors, metric whitelist, atau biaya kredit. Catat konflik disclaimer dan kata terlarang sebagai blocker kepatuhan; jangan menyembunyikannya. Jangan menampilkan atau meminta secret. Di akhir, gunakan format laporan pada Bagian 24 dan bedakan dengan jujur fitur yang benar-benar dites dari integrasi yang belum terverifikasi.

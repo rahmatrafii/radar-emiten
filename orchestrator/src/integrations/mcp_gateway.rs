@@ -1,8 +1,8 @@
-//! Gateway MCP untuk mengakses tools Sectors API v2 milik Representative.
+﻿//! Gateway MCP untuk mengakses tools Sectors API v2 milik Rafi.
 //!
 //! Rafi HANYA menjadi client/gateway; implementasi MCP server (`rmcp`), Sectors
 //! HTTP client, dan pemilihan transport (stdio/SSE/HTTP) adalah milik
-//! Representative. Karena transport belum disepakati (lihat
+//! Rafi. Karena transport belum disepakati (lihat
 //! `docs/integration-decisions.md`), adapter real saat ini adalah stub jujur
 //! yang mengembalikan `McpError::TransportUnavailable`, dan `MockMcpGateway`
 //! dipakai untuk mengetes pipeline.
@@ -284,7 +284,7 @@ impl McpGateway for MockMcpGateway {
 }
 
 // ---------------------------------------------------------------------------
-// RealMcpGateway — stub jujur sampai transport Representative disepakati.
+// RealMcpGateway — stub jujur sampai transport Rafi disepakati.
 // ---------------------------------------------------------------------------
 
 pub struct RealMcpGateway {
@@ -305,7 +305,7 @@ impl RealMcpGateway {
             .as_deref()
             .unwrap_or("(belum diisi)");
         McpError::TransportUnavailable(format!(
-            "MCP_TRANSPORT={transport}; transport/binary MCP Representative belum disepakati — adapter real belum terverifikasi"
+            "MCP_TRANSPORT={transport}; transport/binary MCP Rafi belum disepakati — adapter real belum terverifikasi"
         ))
     }
 }

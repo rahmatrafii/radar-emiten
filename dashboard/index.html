@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IDX Sentinel — Dashboard Informasi</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; background: #f4f6f8; color: #1a1a1a; }
+  header { background: #0f2a44; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  header h1 { font-size: 1.2rem; margin: 0; }
+  header .meta { font-size: 0.85rem; opacity: 0.9; }
+  header button { background: #fff; color: #0f2a44; border: none; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px 24px 40px; }
+  section { background: #fff; border-radius: 10px; padding: 16px 20px; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  section h2 { margin: 0 0 12px; font-size: 1.05rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  th { background: #f8fafc; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; }
+  .b-menguat { background: #dcfce7; color: #166534; }
+  .b-melemah { background: #fee2e2; color: #991b1b; }
+  .b-netral { background: #e5e7eb; color: #374151; }
+  .b-pending { background: #fef9c3; color: #854d0e; }
+  .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; margin: 10px 0; }
+  .card .row { margin: 4px 0; font-size: 0.9rem; }
+  .reject-reason { color: #991b1b; font-weight: 600; }
+  .meter { height: 12px; background: #e5e7eb; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+  .meter > div { height: 100%; background: #0f2a44; }
+  .empty { color: #6b7280; font-style: italic; }
+  .error { color: #991b1b; font-weight: 600; }
+  footer { max-width: 1100px; margin: 0 auto; padding: 0 24px 32px; font-size: 0.85rem; color: #4b5563; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>IDX Sentinel — Dashboard Informasi</h1>
+    <div class="meta" id="refresh-info">Memuat…</div>
+  </div>
+  <button onclick="refreshAll()">Muat Ulang</button>
+</header>
+
+<main>
+  <section id="sec-tesis">
+    <h2>1. Tesis &amp; Status</h2>
+    <div id="tesis-body"><p class="empty">Memuat…</p></div>
+  </section>
+
+  <section id="sec-findings">
+    <h2>2. Temuan (Kartu Bukti)</h2>
+    <div id="findings-body"><p class="empty">Memuat…</p></div>
+  </section>
+
+  <section id="sec-ditolak">
+    <h2>3. Temuan Ditolak</h2>
+    <div id="ditolak-body"><p class="empty">Memuat…</p></div>
+  </section>
+
+  <section id="sec-jejak">
+    <h2>4. Jejak Agent</h2>
+    <div id="jejak-body"><p class="empty">Memuat…</p></div>
+  </section>
+
+  <section id="sec-kredit">
+    <h2>5. Meter Kredit</h2>
+    <div id="kredit-body"><p class="empty">Memuat…</p></div>
+  </section>
+</main>
+
+<footer>
+  <p>Disclaimer: Informasi ini hanya bersifat edukasi &amp; pemantauan data historis. TIDAK memberikan saran investasi (beli/jual/tahan) maupun eksekusi transaksi.</p>
+  <p>Nomor WhatsApp disamarkan oleh backend. Data disegarkan otomatis tiap 5 detik dari endpoint <code>/api/*</code>.</p>
+</footer>
+
+<script>
+async function loadJSON(path) {
+  const res = await fetch(path + '?limit=50');
+  if (!res.ok) throw new Error(path + ' -> HTTP ' + res.status);
+  return res.json();
+}
+
+function esc(v) {
+  if (v === null || v === undefined) return '-';
+  return String(v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function fmtNum(v) {
+  if (typeof v === 'number' && isFinite(v)) return v.toFixed(2);
+  return esc(v);
+}
+
+function badge(status) {
+  const s = String(status || '').toUpperCase();
+  let cls = 'b-netral';
+  if (s === 'MENGUAT') cls = 'b-menguat';
+  else if (s === 'MELEMAH') cls = 'b-melemah';
+  else if (s === 'PENDING_CONFIRMATION' || s === 'BELUM_CUKUP_DATA') cls = 'b-pending';
+  return '<span class="badge ' + cls + '">' + esc(s) + '</span>';
+}
+
+function renderTesis(data) {
+  const rows = (data && data.tesis) || [];
+  if (!rows.length) return '<p class="empty">Belum ada tesis.</p>';
+  let html = '<table><thead><tr><th>ID</th><th>Ticker</th><th>Status</th><th>Aktif</th><th>Nomor</th><th>Dibuat</th></tr></thead><tbody>';
+  for (const r of rows) {
+    html += '<tr><td>' + esc(r.id) + '</td><td><b>' + esc(r.ticker) + '</b></td><td>'
+      + badge(r.status) + '</td><td>' + (r.aktif ? 'Ya' : 'Tidak') + '</td><td>'
+      + esc(r.nomor_masked) + '</td><td>' + esc(r.dibuat_pada) + '</td></tr>';
+  }
+  return html + '</tbody></table>';
+}
+
+function findingCard(f, showReason) {
+  let html = '<div class="card">'
+    + '<div class="row"><b>' + esc(f.ticker) + '</b> · ' + esc(f.metric_name)
+    + ' <span class="badge b-netral">' + esc(f.status) + '</span></div>'
+    + '<div class="row">Sebelum: <b>' + fmtNum(f.previous_value) + '</b> → Sekarang: <b>'
+    + fmtNum(f.current_value) + '</b> (' + esc(f.period) + ')</div>'
+    + '<div class="row">Sumber: ' + esc(f.source) + ' · Keyakinan: ' + fmtNum(f.confidence_score) + '</div>'
+    + '<div class="row">' + esc(f.finding_summary) + '</div>';
+  if (showReason && f.rejection_reason) {
+    html += '<div class="row reject-reason">Alasan: ' + esc(f.rejection_reason) + '</div>';
+  }
+  return html + '</div>';
+}
+
+function renderFindings(data, showReason) {
+  const rows = (data && (data.findings || data.ditolak)) || [];
+  if (!rows.length) return '<p class="empty">Belum ada data.</p>';
+  return rows.map(function (f) { return findingCard(f, showReason); }).join('');
+}
+
+function renderJejak(data) {
+  const rows = (data && data.jejak) || [];
+  if (!rows.length) return '<p class="empty">Belum ada jejak.</p>';
+  let html = '<table><thead><tr><th>Waktu</th><th>Agent</th><th>Aksi</th><th>Hasil</th><th>Ticker</th></tr></thead><tbody>';
+  for (const r of rows) {
+    html += '<tr><td>' + esc(r.dicatat_pada) + '</td><td>' + esc(r.agent) + '</td><td>'
+      + esc(r.aksi) + '</td><td>' + esc(r.outcome) + '</td><td>' + esc(r.ticker) + '</td></tr>';
+  }
+  return html + '</tbody></table>';
+}
+
+function renderKredit(data) {
+  const budget = Number(data.budget_configured || 0);
+  const used = Number(data.total_used || 0);
+  const remaining = Number(data.remaining || 0);
+  const pct = budget > 0 ? Math.min(100, (used / budget) * 100) : 0;
+  return '<div>Terpakai: <b>' + esc(used) + '</b> / Budget: <b>' + esc(budget)
+    + '</b> (sisa: <b>' + esc(remaining) + '</b>)</div>'
+    + '<div class="meter"><div style="width:' + pct.toFixed(1) + '%"></div></div>'
+    + '<div>Terakhir diperbarui: ' + esc(data.last_updated_at) + '</div>'
+    + '<div><i>' + esc(data.note) + '</i></div>';
+}
+
+function setStatus(msg, isError) {
+  const el = document.getElementById('refresh-info');
+  el.textContent = msg;
+  el.className = 'meta' + (isError ? ' error' : '');
+}
+
+async function refreshAll() {
+  try {
+    const [t, f, d, j, k] = await Promise.all([
+      loadJSON('/api/tesis'), loadJSON('/api/findings'),
+      loadJSON('/api/ditolak'), loadJSON('/api/jejak'),
+      loadJSON('/api/kredit'),
+    ]);
+    document.getElementById('tesis-body').innerHTML = renderTesis(t);
+    document.getElementById('findings-body').innerHTML = renderFindings(f, false);
+    document.getElementById('ditolak-body').innerHTML = renderFindings(d, true);
+    document.getElementById('jejak-body').innerHTML = renderJejak(j);
+    document.getElementById('kredit-body').innerHTML = renderKredit(k);
+    setStatus('Terakhir diperbarui: ' + new Date().toLocaleString('id-ID'));
+  } catch (e) {
+    setStatus('Gagal memuat: ' + e.message, true);
+  }
+}
+
+refreshAll();
+setInterval(refreshAll, 5000);
+</script>
+</body>
+</html>

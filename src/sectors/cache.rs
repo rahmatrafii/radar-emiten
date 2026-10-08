@@ -32,9 +32,11 @@ impl<T> CacheEntry<T> {
 /// Thread-safe via `RwLock` sehingga bisa dibungkus `Arc` dan dibagi antar task.
 ///
 /// # Contoh
-/// ```rust
-/// let cache: MemCache<Vec<QuarterlyReport>> = MemCache::new(Duration::hours(24));
-/// cache.set("BBCA", data);
+/// ```rust,no_run
+/// use chrono::Duration;
+/// use radar_emiten::sectors::cache::MemCache;
+/// let cache: MemCache<Vec<String>> = MemCache::new(Duration::hours(24));
+/// cache.set("BBCA", vec!["data".to_string()]);
 /// if let Some(cached) = cache.get("BBCA") { /* gunakan */ }
 /// ```
 pub struct MemCache<T> {

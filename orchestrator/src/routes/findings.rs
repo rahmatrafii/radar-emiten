@@ -3,7 +3,8 @@ use serde_json::{Value, json};
 
 use crate::errors::AppError;
 use crate::models::finding::Finding;
-use crate::repositories::{compliance, findings, snapshots, traces};
+use crate::repositories::{compliance, findings, traces};
+use crate::services::{compliance_service, evidence_verifier};
 use crate::state::AppState;
 use crate::validation;
 
@@ -56,33 +57,68 @@ pub async fn accept_finding(state: &AppState, finding: Finding) -> Result<Json<V
         })));
     }
 
-    let current = validation::to_f64(&finding.current_value).unwrap();
-    let previous = validation::to_f64(&finding.previous_value).unwrap();
-    let observed_at = chrono::DateTime::parse_from_rfc3339(&finding.observed_at)
-        .unwrap()
-        .with_timezone(&chrono::Utc);
+    // Gate 1.5: compliance check kata terlarang (D-02, milik Dian).
+    // Sumber daftar: docs/PROMPTS.md bagian 3, via compliance_service.
+    let compliance_result = compliance_service::check_compliance(&finding.finding_summary);
+    if !compliance_result.is_compliant {
+        let reason = format!(
+            "kata terlarang terdeteksi: {}",
+            compliance_result.prohibited_words_detected.join(", ")
+        );
+        let finding_id = findings::insert(
+            &state.pool,
+            &finding.ticker,
+            Some(&finding.subsector),
+            &finding.metric_name,
+            validation::to_f64(&finding.current_value),
+            validation::to_f64(&finding.previous_value),
+            Some(&finding.period),
+            Some(&finding.source),
+            chrono::DateTime::parse_from_rfc3339(&finding.observed_at)
+                .ok()
+                .map(|t| t.with_timezone(&chrono::Utc)),
+            Some(finding.confidence_score),
+            Some(&finding.finding_summary),
+            payload,
+            "ditolak",
+        )
+        .await
+        .unwrap_or(0);
+        let _ = compliance::log(
+            &state.pool,
+            if finding_id == 0 {
+                None
+            } else {
+                Some(finding_id)
+            },
+            false,
+            false,
+            serde_json::to_value(&compliance_result.prohibited_words_detected).unwrap_or(json!([])),
+            Some(&reason),
+            "finding",
+            None,
+        )
+        .await;
+        return Ok(Json(json!({
+            "finding_id": if finding_id == 0 { Value::Null } else { json!(finding_id) },
+            "status": "rejected",
+            "rejection_reason": reason,
+        })));
+    }
 
-    // Gate 2: cross-check dengan snapshot tersimpan.
-    let current_ok = snapshots::value_exists(
-        &state.pool,
-        &finding.ticker,
-        &finding.metric_name,
-        &finding.period,
-        &finding.source,
-        current,
-    )
-    .await?;
-    let previous_ok = snapshots::previous_exists(
-        &state.pool,
-        &finding.ticker,
-        &finding.metric_name,
-        previous,
-        &finding.period,
-    )
-    .await?;
+    // Gate 2: evidence verification 1:1 via service (D-03, milik Dian).
+    // Logic sama seperti sebelumnya, kini terpusat di evidence_verifier.
+    let verification = evidence_verifier::verify_evidence(&state.pool, &finding).await?;
 
-    if !current_ok || !previous_ok {
-        let reason = "current_value/previous_value tidak cocok dengan snapshot tersimpan";
+    if !verification.evidence_verified {
+        let reason = verification
+            .rejection_reason
+            .unwrap_or_else(|| "evidence tidak terverifikasi".to_string());
+        let current = validation::to_f64(&finding.current_value).unwrap_or(0.0);
+        let previous = validation::to_f64(&finding.previous_value).unwrap_or(0.0);
+        let observed_at = chrono::DateTime::parse_from_rfc3339(&finding.observed_at)
+            .map(|t| t.with_timezone(&chrono::Utc))
+            .unwrap_or_else(|_| chrono::Utc::now());
         let finding_id = findings::insert(
             &state.pool,
             &finding.ticker,
@@ -105,7 +141,7 @@ pub async fn accept_finding(state: &AppState, finding: Finding) -> Result<Json<V
             false,
             false,
             json!([]),
-            Some(reason),
+            Some(&reason),
             "finding",
             None,
         )
@@ -116,6 +152,13 @@ pub async fn accept_finding(state: &AppState, finding: Finding) -> Result<Json<V
             "rejection_reason": reason,
         })));
     }
+
+    // Gate 1 + Gate 2 lolos → nilai numerik dan timestamp valid.
+    let current = validation::to_f64(&finding.current_value).unwrap();
+    let previous = validation::to_f64(&finding.previous_value).unwrap();
+    let observed_at = chrono::DateTime::parse_from_rfc3339(&finding.observed_at)
+        .unwrap()
+        .with_timezone(&chrono::Utc);
 
     // Gate 3: duplikasi lolos (unique partial index).
     let inserted = findings::insert(

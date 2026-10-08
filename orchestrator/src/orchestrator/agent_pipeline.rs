@@ -1,4 +1,4 @@
-//! `orchestrator::AgentPipeline` — pengendali alur satu siklus pemantauan.
+﻿//! `orchestrator::AgentPipeline` — pengendali alur satu siklus pemantauan.
 //!
 //! Prinsip: angka dan aturan ditetapkan Rust secara deterministik; LLM tidak
 //! menjadi sumber angka. Setiap kegagalan HTTP eksternal tetap meninggalkan
@@ -123,7 +123,7 @@ impl AgentPipeline {
     ) -> Result<(), String> {
         let pool = &self.state.pool;
 
-        // 1. Ambil evidence melalui MCP gateway (data Sectors milik Representative).
+        // 1. Ambil evidence melalui MCP gateway (data Sectors milik Rafi).
         let evidence = self
             .state
             .mcp

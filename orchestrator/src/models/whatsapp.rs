@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-/// Disclaimer resmi — sumber kebenaran di CONTRACTS.md. Jangan diubah sebelum keputusan tim.
-pub const DISCLAIMER_RESMI: &str = "Disclaimer: Informasi ini hanya bersifat edukasi & pemantauan data historis. Bukan anjuran investasi atau rekomendasi transaksi.";
+/// Official disclaimer — source of truth in CONTRACTS.md. Do not change before team decision.
+pub const DISCLAIMER_RESMI: &str = "Disclaimer: Informasi ini hanya bersifat edukasi & pemantauan data historis. TIDAK memberikan saran investasi (beli/jual/tahan) maupun eksekusi transaksi.";
 
 /// Payload alert internal sesuai schema CONTRACTS.md (additionalProperties dilarang).
 #[derive(Debug, Clone, Serialize, Deserialize)]
