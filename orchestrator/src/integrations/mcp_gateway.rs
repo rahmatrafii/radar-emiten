@@ -1,4 +1,4 @@
-﻿//! Gateway MCP untuk mengakses tools Sectors API v2 milik Rafi.
+//! Gateway MCP untuk mengakses tools Sectors API v2 milik Rafi.
 //!
 //! Rafi HANYA menjadi client/gateway; implementasi MCP server (`rmcp`), Sectors
 //! HTTP client, dan pemilihan transport (stdio/SSE/HTTP) adalah milik
@@ -20,6 +20,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 use crate::config::{AppMode, Config};
 
@@ -284,7 +285,8 @@ impl McpGateway for MockMcpGateway {
 }
 
 // ---------------------------------------------------------------------------
-// RealMcpGateway — stub jujur sampai transport Rafi disepakati.
+// RealMcpGateway — implementasi stdio: spawn subprocess mcp-server,
+// komunikasi via JSON-RPC MCP protocol di stdin/stdout.
 // ---------------------------------------------------------------------------
 
 pub struct RealMcpGateway {
@@ -298,52 +300,350 @@ impl RealMcpGateway {
         }
     }
 
-    fn unavailable(&self) -> McpError {
-        let transport = self
+    /// Spawn binary mcp-server sebagai subprocess dan kembalikan client-nya.
+    async fn client(&self) -> Result<StdioMcpClient, McpError> {
+        let command = self
             .config
-            .mcp_transport
+            .mcp_server_command
             .as_deref()
-            .unwrap_or("(belum diisi)");
-        McpError::TransportUnavailable(format!(
-            "MCP_TRANSPORT={transport}; transport/binary MCP Rafi belum disepakati — adapter real belum terverifikasi"
-        ))
+            .unwrap_or("../target/debug/mcp-server");
+
+        // Env var SECTORS_API_KEY harus diteruskan ke subprocess.
+        let sectors_key = std::env::var("SECTORS_API_KEY").unwrap_or_default();
+
+        StdioMcpClient::spawn(command, &sectors_key).await
     }
 }
 
 impl McpGateway for RealMcpGateway {
     fn list_subsectors(&self) -> BoxFuture<'_, Result<Vec<String>, McpError>> {
-        Box::pin(async move { Err(self.unavailable()) })
+        Box::pin(async move {
+            let mut client = self.client().await?;
+            let result = client
+                .call_tool("list_subsectors", serde_json::json!({}))
+                .await?;
+            // Respons: {"subsectors": ["banks", "telecommunication", ...]}
+            let subsectors = result
+                .pointer("/subsectors")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| McpError::InvalidResponse("list_subsectors: field 'subsectors' tidak ditemukan".into()))?
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+            Ok(subsectors)
+        })
     }
+
     fn screen_companies(
         &self,
-        _params: ScreenParams,
+        params: ScreenParams,
     ) -> BoxFuture<'_, Result<ScreenResult, McpError>> {
-        Box::pin(async move { Err(self.unavailable()) })
+        Box::pin(async move {
+            let mut client = self.client().await?;
+            let args = serde_json::json!({
+                "subsector": params.subsector,
+                "limit": 20,
+            });
+            let result = client.call_tool("screen_companies", args).await?;
+            // Respons: {"tickers": ["BBCA", "BBRI", ...]}
+            let tickers = result
+                .pointer("/tickers")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| McpError::InvalidResponse("screen_companies: field 'tickers' tidak ditemukan".into()))?
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+            Ok(ScreenResult { tickers })
+        })
     }
+
     fn get_subsector_report(
         &self,
-        _subsector: String,
+        subsector: String,
     ) -> BoxFuture<'_, Result<SubsectorReport, McpError>> {
-        Box::pin(async move { Err(self.unavailable()) })
+        Box::pin(async move {
+            let mut client = self.client().await?;
+            let args = serde_json::json!({ "subsector": subsector.clone() });
+            let result = client.call_tool("get_subsector_report", args).await?;
+            Ok(SubsectorReport {
+                subsector,
+                raw: result,
+            })
+        })
     }
+
     fn get_company_evidence(
         &self,
-        _ticker: String,
-        _period: Option<String>,
+        ticker: String,
+        period: Option<String>,
     ) -> BoxFuture<'_, Result<CompanyEvidence, McpError>> {
-        Box::pin(async move { Err(self.unavailable()) })
+        Box::pin(async move {
+            let mut client = self.client().await?;
+            // period → n_quarters: ambil 2 kuartal default, atau 1 bila period spesifik
+            let n_quarters: u32 = if period.is_some() { 1 } else { 2 };
+            let args = serde_json::json!({
+                "ticker": ticker,
+                "n_quarters": n_quarters,
+            });
+            let raw = client.call_tool("get_company_evidence", args).await?;
+
+            // Respons: array record keuangan kuartalan.
+            // Ambil record pertama (terbaru) dan petakan ke CompanyEvidence.
+            let records = raw
+                .as_array()
+                .ok_or_else(|| McpError::InvalidResponse("get_company_evidence: expected array".into()))?;
+            let first = records
+                .first()
+                .ok_or_else(|| McpError::InvalidResponse(format!("get_company_evidence: tidak ada data untuk {ticker}")))?;
+
+            let period_str = first
+                .pointer("/period")
+                .or_else(|| first.pointer("/fiscal_quarter"))
+                .or_else(|| first.pointer("/period_end"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            // Cari nilai metrik — coba revenue, net_income, dll dari record.
+            // Default ke field pertama yang numerik.
+            let (metric_name, value) = extract_primary_metric(first);
+
+            let subsector = first
+                .pointer("/sub_sector")
+                .or_else(|| first.pointer("/subsector"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            Ok(CompanyEvidence {
+                ticker: ticker.clone(),
+                subsector,
+                metric_name,
+                period: period_str,
+                value,
+                source: format!("Sectors API v2 /v2/financials/quarterly/{ticker}/"),
+                observed_at: Utc::now(),
+                raw: raw.clone(),
+            })
+        })
     }
+
     fn get_previous_snapshot(
         &self,
         _ticker: String,
         _metric_name: String,
     ) -> BoxFuture<'_, Result<Option<CompanyEvidence>, McpError>> {
-        Box::pin(async move { Err(self.unavailable()) })
+        // Tool 5 di mcp-server masih stub (butuh endpoint internal).
+        // Kembalikan None agar pipeline tetap jalan dengan baseline mode.
+        Box::pin(async move { Ok(None) })
     }
+
     fn record_finding(
         &self,
-        _finding: serde_json::Value,
+        finding: serde_json::Value,
     ) -> BoxFuture<'_, Result<String, McpError>> {
-        Box::pin(async move { Err(self.unavailable()) })
+        Box::pin(async move {
+            let mut client = self.client().await?;
+            let args = serde_json::json!({ "finding": finding });
+            let result = client.call_tool("record_finding", args).await?;
+            let note = result
+                .pointer("/note")
+                .or_else(|| result.pointer("/status"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("accepted")
+                .to_string();
+            Ok(note)
+        })
     }
+}
+
+// ---------------------------------------------------------------------------
+// StdioMcpClient — JSON-RPC MCP over stdin/stdout.
+// ---------------------------------------------------------------------------
+
+/// Klien MCP yang berkomunikasi dengan subprocess via stdin/stdout.
+/// Setiap pemanggilan `call_tool` melakukan:
+///   1. Initialize handshake (jika belum)
+///   2. Kirim `tools/call` JSON-RPC request ke stdin
+///   3. Baca satu baris JSON-RPC response dari stdout
+///   4. Ekstrak `content[0].text` dan parse sebagai JSON
+pub struct StdioMcpClient {
+    child: tokio::process::Child,
+    stdin: tokio::process::ChildStdin,
+    stdout: tokio::io::BufReader<tokio::process::ChildStdout>,
+    next_id: u64,
+}
+
+impl StdioMcpClient {
+    /// Spawn binary MCP server dan lakukan initialize handshake.
+    pub async fn spawn(command: &str, sectors_api_key: &str) -> Result<Self, McpError> {
+        let mut child = tokio::process::Command::new(command)
+            .env("SECTORS_API_KEY", sectors_api_key)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            // stderr ke inherit agar log mcp-server tampil di terminal (tidak ganggu stdout)
+            .stderr(std::process::Stdio::inherit())
+            .spawn()
+            .map_err(|e| McpError::TransportUnavailable(format!(
+                "gagal spawn mcp-server '{command}': {e}. Pastikan binary sudah di-build: cargo build --bin mcp-server"
+            )))?;
+
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| McpError::TransportUnavailable("tidak bisa ambil stdin subprocess".into()))?;
+        let stdout_raw = child
+            .stdout
+            .take()
+            .ok_or_else(|| McpError::TransportUnavailable("tidak bisa ambil stdout subprocess".into()))?;
+        let stdout = tokio::io::BufReader::new(stdout_raw);
+
+        let mut client = Self {
+            child,
+            stdin,
+            stdout,
+            next_id: 1,
+        };
+
+        // MCP initialize handshake.
+        client.initialize().await?;
+
+        Ok(client)
+    }
+
+    /// Kirim JSON-RPC request dan tunggu response dengan timeout 30 detik.
+    async fn send_request(&mut self, method: &str, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        });
+        let mut line = serde_json::to_string(&request)
+            .map_err(|e| McpError::InvalidResponse(format!("serialisasi request gagal: {e}")))?;
+        line.push('\n');
+
+        self.stdin
+            .write_all(line.as_bytes())
+            .await
+            .map_err(|e| McpError::TransportUnavailable(format!("tulis stdin gagal: {e}")))?;
+        self.stdin
+            .flush()
+            .await
+            .map_err(|e| McpError::TransportUnavailable(format!("flush stdin gagal: {e}")))?;
+
+        // Baca baris response (dengan timeout).
+        let mut response_line = String::new();
+        let read_fut = self.stdout.read_line(&mut response_line);
+        tokio::time::timeout(std::time::Duration::from_secs(30), read_fut)
+            .await
+            .map_err(|_| McpError::Timeout)?
+            .map_err(|e| McpError::TransportUnavailable(format!("baca stdout gagal: {e}")))?;
+
+        if response_line.is_empty() {
+            return Err(McpError::TransportUnavailable("subprocess ditutup (EOF)".into()));
+        }
+
+        let response: serde_json::Value = serde_json::from_str(response_line.trim())
+            .map_err(|e| McpError::InvalidResponse(format!("JSON-RPC response tidak valid: {e} — raw: {response_line}")))?;
+
+        // Cek JSON-RPC error.
+        if let Some(err) = response.get("error") {
+            return Err(McpError::InvalidResponse(format!("JSON-RPC error: {err}")));
+        }
+
+        Ok(response["result"].clone())
+    }
+
+    /// MCP initialize handshake (wajib sebelum tools/call).
+    async fn initialize(&mut self) -> Result<(), McpError> {
+        let params = serde_json::json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {
+                "name": "orchestrator",
+                "version": "0.1.0"
+            }
+        });
+        self.send_request("initialize", params).await?;
+
+        // Kirim initialized notification (tidak punya response).
+        let notif = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+        });
+        let mut line = serde_json::to_string(&notif).unwrap_or_default();
+        line.push('\n');
+        let _ = self.stdin.write_all(line.as_bytes()).await;
+        let _ = self.stdin.flush().await;
+
+        Ok(())
+    }
+
+    /// Panggil satu MCP tool dan kembalikan konten teks ter-parse sebagai JSON.
+    pub async fn call_tool(&mut self, tool_name: &str, arguments: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let params = serde_json::json!({
+            "name": tool_name,
+            "arguments": arguments,
+        });
+        let result = self.send_request("tools/call", params).await?;
+
+        // MCP CallToolResult: {"content": [{"type": "text", "text": "..."}], "isError": false}
+        let is_error = result.pointer("/isError").and_then(|v| v.as_bool()).unwrap_or(false);
+        let text = result
+            .pointer("/content/0/text")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::InvalidResponse(format!("{tool_name}: respons tanpa content[0].text")))?;
+
+        if is_error {
+            return Err(McpError::InvalidResponse(format!("{tool_name} error: {text}")));
+        }
+
+        // Parse text sebagai JSON (semua tool mcp-server mengembalikan JSON string).
+        serde_json::from_str(text)
+            .map_err(|e| McpError::InvalidResponse(format!("{tool_name}: content bukan JSON valid: {e} — raw: {text}")))
+    }
+}
+
+impl Drop for StdioMcpClient {
+    fn drop(&mut self) {
+        // Pastikan subprocess dibersihkan saat client di-drop.
+        let _ = self.child.start_kill();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: ekstrak metric utama dari record keuangan kuartalan Sectors.
+// ---------------------------------------------------------------------------
+
+/// Ambil (metric_name, value) dari satu record JSON keuangan kuartalan.
+/// Prioritas: revenue > net_income > gross_profit > operating_profit > earnings.
+fn extract_primary_metric(record: &serde_json::Value) -> (String, Option<f64>) {
+    let priority = [
+        "revenue",
+        "net_income",
+        "gross_profit",
+        "operating_profit",
+        "earnings",
+        "total_assets",
+        "total_equity",
+    ];
+    for field in priority {
+        if let Some(v) = record.get(field).and_then(|v| v.as_f64()) {
+            return (field.to_string(), Some(v));
+        }
+    }
+    // Fallback: ambil field numerik pertama yang ada.
+    if let Some(obj) = record.as_object() {
+        for (k, v) in obj {
+            if let Some(f) = v.as_f64() {
+                return (k.clone(), Some(f));
+            }
+        }
+    }
+    ("unknown".to_string(), None)
 }

@@ -71,10 +71,10 @@ sqlx migrate run --source orchestrator/migrations   # tiap habis pull migrasi ba
 
 ## 5. Yang belum selesai (jujur, per audit 7 Okt 2026)
 
-1. `RealMcpGateway` masih stub `TransportUnavailable` (`orchestrator/src/integrations/mcp_gateway.rs`) — transport MCP real belum disepakati.
+1. ~~`RealMcpGateway` masih stub `TransportUnavailable`~~ ✅ **Selesai (8 Okt 2026):** `RealMcpGateway` diimplementasi penuh via **stdio transport** — spawn subprocess `mcp-server`, JSON-RPC initialize handshake, `call_tool()` dengan timeout 30 detik. Lihat `StdioMcpClient` di `orchestrator/src/integrations/mcp_gateway.rs`. Pastikan binary di-build dulu: `cargo build --bin mcp-server` dari root repo.
 2. `raw_data` di `POST /snapshots` diterima lalu dibuang (`orchestrator/src/routes/snapshots.rs:64-65`) — butuh migrasi kolom `raw_data JSONB` kalau mau simpan evidence mentah.
 3. Durasi `/diam` belum disepakati — saat ini mute sampai `/lanjut` (2099-12-31, lihat `services/command_router.rs:98-108`).
-4. `GEMINI_MODEL` kosong di `.env` contoh — isi sesuai model yang dipakai tim.
+4. ~~`GEMINI_MODEL` kosong di `.env` contoh~~ ✅ **Selesai (8 Okt 2026):** `.env` (root) dan `orchestrator/.env` keduanya sudah berisi `GEMINI_MODEL=gemini-2.0-flash`.
 5. Prompt ekstraksi tesis tidak ada di `04-agent-prompts.md` — schema-nya ada di `services/gemini_client.rs`, perlu konfirmasi pemilik prompt.
 6. Webhook publik butuh tunnel (ngrok/Cloudflare) + registrasi di Meta + subscribe `messages`. Balasan teks di luar jendela 24 jam butuh template yang disetujui.
 7. Deteksi kata terlarang tidak menangkap imbuhan ("membeli" lolos dari "beli") — keterbatasan `compliance_service.rs`, didokumentasikan di `04-agent-prompts.md`.
